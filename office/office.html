@@ -1,0 +1,1537 @@
+<!-- 🌀 CF Loader -->
+<script type="text/javascript">
+  (function () {
+    // Ejecutar al cargar completamente el DOM
+    document.addEventListener("DOMContentLoaded", () => {
+      const loaderLink = document.getElementById("loader-link");
+      const wrapperLink = document.getElementById("wrapper-link");
+
+      // Forzar que el tab activo inicial sea loader-tab
+      if (loaderLink) {
+        console.log("🔄: loader-tab");
+        loaderLink.click();
+      }
+
+      // Evento: mostrar loader (ir a loader-tab)
+      document.addEventListener("cf-loader-on", () => {
+        console.log("⏳: cf-loader-on");
+        if (loaderLink) loaderLink.click();
+      });
+
+      // Evento: ocultar loader (ir a wrapper-tab)
+      document.addEventListener("cf-loader-off", () => {
+        console.log("✅: cf-loader-off");
+        if (wrapperLink) wrapperLink.click();
+      });
+    });
+  })();
+</script>
+
+
+
+<!-- 🦜 GET Creatifornia  🦜 -->
+<script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", initCreatifornia);
+  document.addEventListener("get-creatifornia", initCreatifornia);
+
+  function initCreatifornia() {
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (authToken) {
+      xano.setAuthToken(authToken);
+
+      xano.get('/offices').then((response) => {
+        if (response) {
+          localStorage.setItem("offices", JSON.stringify(response));
+          console.log("✅ 'offices' descargado");
+
+          // ✅ Disparar evento cuando se ha guardado exitosamente
+          document.dispatchEvent(new Event("creatifornia-ready"));
+        }
+      }).catch(error => {
+        console.error("❌ Error al obtener datos de Xano:", error);
+      });
+    }
+  }
+</script>
+
+
+<!-- 🦜 GET Options (verification) 🦜 -->
+<script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", initOptions);
+  document.addEventListener("cf-get-options", initOptions);
+
+  function initOptions() {
+    const existing = localStorage.getItem("options");
+
+    if (existing) {
+      console.log("📦 'options' ya existe en localStorage.");
+      document.dispatchEvent(new Event("cf-options-ready"));
+      return;
+    }
+
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (authToken) {
+      xano.setAuthToken(authToken);
+
+      xano.get('/options').then((response) => {
+        if (response?.body?.clubs_kids_techniques) {
+          const structured = {
+            clubs_kids_techniques: response.body.clubs_kids_techniques
+          };
+          localStorage.setItem("options", JSON.stringify(structured));
+          console.log("✅ 'options' descargado");
+
+          document.dispatchEvent(new Event("cf-options-ready"));
+        } else {
+          console.warn("⚠️ No se encontró el array en la respuesta.");
+        }
+      }).catch(error => {
+        console.error("❌ Error al obtener datos de Xano:", error);
+      });
+    }
+  }
+</script>
+
+
+
+
+
+<!-- 🦜 cf-reset-tabs  🦜 -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Función principal para resetear pestañas
+  function resetTabs() {
+    // Seleccionar todas las pestañas con el atributo name="cf-reset-tabs"
+    const tabsToReset = document.querySelectorAll('[name="cf-reset-tabs"]');
+    
+    tabsToReset.forEach(tab => {
+      // Obtener el ID del componente de pestañas Webflow asociado
+      const tabsComponent = tab.closest('[data-w-tab]');
+      
+      if (tabsComponent) {
+        // Resetear a ninguna pestaña seleccionada
+        tabsComponent.setAttribute('data-w-tab', 'none');
+        console.log('✅ Pestaña reseteada:', tabsComponent);
+      }
+    });
+  }
+
+  // Ejecutar al cargar la página
+  resetTabs();
+
+  // Escuchar el evento personalizado
+  document.addEventListener('cf-reset-tabs', resetTabs);
+
+});
+</script>
+  
+  
+<!-- 🦜 cf-fill-text 🦜 -->
+<script type="text/javascript">
+  document.addEventListener("creatifornia-ready", fillTextFromLocalStorage);
+  document.addEventListener("cf-update-text", fillTextFromLocalStorage);
+  
+
+  function fillTextFromLocalStorage() {
+    const elements = document.querySelectorAll('[cf-fill-text-key]');
+    let elementsProcessed = 0;
+    const totalElements = elements.length;
+
+    if (totalElements === 0) {
+      dispatchTextReady();
+      return;
+    }
+
+    elements.forEach(element => {
+      const key = element.getAttribute('cf-fill-text-key');
+      const path = element.getAttribute('cf-fill-text-path');
+      if (!key || !path) {
+        checkAllElementsProcessed();
+        return;
+      }
+
+      // Obtener objeto desde localStorage
+      let data = localStorage.getItem(key);
+      try {
+        data = JSON.parse(data);
+      } catch {
+        data = null;
+      }
+
+      // Navegar por el path
+      const value = path.split('.').reduce((acc, prop) => (acc && acc[prop] !== undefined) ? acc[prop] : null, data);
+
+      if (value !== null) {
+        element.textContent = value;
+      }
+
+      checkAllElementsProcessed();
+    });
+
+    function checkAllElementsProcessed() {
+      elementsProcessed++;
+      if (elementsProcessed === totalElements) {
+        // Esperar dos frames de animación para asegurar renderizado
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            dispatchTextReady();
+          });
+        });
+      }
+    }
+
+    function dispatchTextReady() {
+      const event = new CustomEvent('cf-text-ready', {
+        bubbles: true,
+        cancelable: true,
+        detail: { 
+          elementsCount: totalElements,
+          timestamp: performance.now()
+        }
+      });
+      document.dispatchEvent(event);
+    }
+  }
+</script>
+ 
+ 
+
+<!-- 🦜 cf-fill-inputs 🦜 -->
+<script type="text/javascript">
+  document.addEventListener("creatifornia-ready", fillInputsFromLocalStorage);
+  document.addEventListener("cf-update-inputs", fillInputsFromLocalStorage);
+
+  function fillInputsFromLocalStorage() {
+    const inputs = document.querySelectorAll('cf-fill-inputs-key');
+    let inputsProcessed = 0;
+    const totalInputs = inputs.length;
+
+    if (totalInputs === 0) {
+      dispatchInputsReady();
+         return;
+    }
+
+    inputs.forEach(input => {
+      const key = input.getAttribute('cf-fill-inputs-key');
+      const path = input.getAttribute('cf-fill-inputs-path');
+      if (!key || !path) {
+        checkAllInputsProcessed();
+        return;
+      }
+
+      // Obtener objeto desde localStorage
+      let data = localStorage.getItem(key);
+      try {
+        data = JSON.parse(data);
+      } catch {
+        data = null;
+      }
+
+      // Navegar por el path
+      const value = path.split('.').reduce((obj, prop) => (obj && obj[prop] !== undefined) ? obj[prop] : null, data);
+
+      if (value !== null) {
+        if (input.type === 'checkbox') {
+          input.checked = Boolean(value);
+        } else if (input.type === 'radio') {
+          if (input.value === value.toString()) input.checked = true;
+        } else if (input.tagName === 'SELECT' && input.multiple && Array.isArray(value)) {
+          Array.from(input.options).forEach(opt => {
+            opt.selected = value.includes(opt.value);
+          });
+        } else {
+          input.value = value;
+        }
+
+        // Placeholder solo si no está definido
+        if (!input.placeholder && typeof value === 'string') {
+          input.placeholder = value;
+        }
+      }
+
+      checkAllInputsProcessed();
+    });
+
+    function checkAllInputsProcessed() {
+      inputsProcessed++;
+      if (inputsProcessed === totalInputs) {
+        // Esperar al siguiente frame de renderizado para asegurar visibilidad
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            dispatchInputsReady();
+          });
+        });
+      }
+    }
+
+    function dispatchInputsReady() {
+      const event = new CustomEvent('cf-fill-inputs-ready', {
+        bubbles: true,
+        cancelable: true,
+        detail: { inputsCount: totalInputs }
+      });
+      document.dispatchEvent(event);
+    }
+  }
+</script>
+
+     
+<!-- 🦜 cf-fill-specific-inputs 🦜-->
+<script>
+  document.addEventListener("cf-fill-specific-inputs", (e) => {
+    const { key, path } = e.detail || {};
+    if (!key || !path) return;
+
+    const selector = `[cf-local-storage-key="${key}"][cf-local-storage-path="${path}"]`;
+    const matchingInputs = document.querySelectorAll(selector);
+
+    if (matchingInputs.length === 0) {
+      console.warn(`⚠️ No inputs encontrados para key="${key}" y path="${path}"`);
+      return;
+    }
+
+    let storedData;
+    try {
+      storedData = JSON.parse(localStorage.getItem(key));
+    } catch {
+      storedData = null;
+    }
+
+    const value = path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined) ? acc[part] : null, storedData);
+
+    matchingInputs.forEach(input => {
+      if (value === null) {
+        // ✅ Limpiar input si el valor ya no existe
+        if (input.type === 'checkbox' || input.type === 'radio') {
+          input.checked = false;
+        } else {
+          input.value = '';
+        }
+        return;
+      }
+
+      // ✅ Asignar el valor como antes
+      if (input.type === 'checkbox') {
+        input.checked = Boolean(value);
+      } else if (input.type === 'radio') {
+        if (input.value === value.toString()) input.checked = true;
+      } else if (input.tagName === 'SELECT' && input.multiple && Array.isArray(value)) {
+        Array.from(input.options).forEach(opt => {
+          opt.selected = value.includes(opt.value);
+        });
+      } else {
+        input.value = value;
+      }
+
+      if (!input.placeholder && typeof value === 'string') {
+        input.placeholder = value;
+      }
+    });
+
+    document.dispatchEvent(new CustomEvent("cf-inputs-ready", {
+      detail: { key, path }
+    }));
+  });
+</script>
+
+<!-- 🦜 cf-fill-select (es) 🦜 -->
+<script type="text/javascript">
+  document.addEventListener("cf-options-ready", fillSelectsFromLocalStorage);
+  document.addEventListener("cf-fill-select-trigger", fillSelectsFromLocalStorage);
+
+  function fillSelectsFromLocalStorage() {
+    const selects = document.querySelectorAll('select[cf-fill-select-key]');
+    let processed = 0;
+    const total = selects.length;
+
+    if (total === 0) {
+      dispatchSelectsReady();
+      return;
+    }
+
+    selects.forEach(select => {
+      const key = select.getAttribute('cf-fill-select-key');
+      const path = select.getAttribute('cf-fill-select-path');
+      const displayLang = select.getAttribute('cf-select-lang') || 'es';
+      const valueField = `${displayLang}_value`;
+      const textField = displayLang;
+
+      if (!key || !path) {
+        checkOneProcessed();
+        return;
+      }
+
+      let stored = localStorage.getItem(key);
+      try {
+        stored = JSON.parse(stored);
+      } catch {
+        stored = null;
+      }
+
+      const list = path.split('.').reduce((obj, prop) => (obj && obj[prop] !== undefined) ? obj[prop] : null, stored);
+
+      if (!Array.isArray(list) || list.length === 0) {
+        console.warn(`⚠️ Lista vacía o no válida para select [${key} → ${path}]`);
+        checkOneProcessed();
+        return;
+      }
+
+      // Limpiar opciones existentes
+      select.innerHTML = "";
+
+      // Agregar placeholder (primer elemento)
+      const firstItem = list[0];
+      const placeholderOption = document.createElement("option");
+      placeholderOption.textContent = firstItem[textField];
+      placeholderOption.disabled = true;
+      placeholderOption.selected = !select.hasAttribute("multiple");
+      placeholderOption.value = "";
+      select.appendChild(placeholderOption);
+
+      // Agregar opciones reales
+      list.slice(1).forEach(item => {
+        const option = document.createElement("option");
+        option.value = item[valueField];  // Usa es_value
+        option.textContent = item[textField];  // Usa es
+        select.appendChild(option);
+      });
+
+      checkOneProcessed();
+    });
+
+    function checkOneProcessed() {
+      processed++;
+      if (processed === total) {
+        requestAnimationFrame(() => {
+          document.dispatchEvent(new Event("cf-fill-select-ready"));
+        });
+      }
+    }
+
+    function dispatchSelectsReady() {
+      document.dispatchEvent(new Event("cf-fill-select-ready"));
+    }
+  }
+</script>
+
+
+<!-- 🦜 cf-select-display 🦜 -->
+<script>
+document.addEventListener("cf-fill-select-ready", () => {
+  document.querySelectorAll('select[cf-select-display-map]').forEach(select => {
+    const rawMap = select.getAttribute('cf-select-display-map');
+    if (!rawMap) return;
+    
+    try {
+      const displayMap = JSON.parse(rawMap);
+      const allInputs = new Set();
+      const allDivs = new Set();
+      
+      // Pre-capturar todos los targets
+      Object.values(displayMap).forEach(entry => {
+        [].concat(entry.input || []).forEach(id => allInputs.add(id));
+        [].concat(entry.div || []).forEach(id => allDivs.add(id));
+      });
+      
+      const updateDisplay = () => {
+        const selectedValue = select.value; // Esto ahora recibe valores técnicos (ej: "pintura-acrilica")
+        const config = displayMap[selectedValue] || {};
+        
+        // Ocultar todos los elementos
+        allDivs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+        allInputs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.removeAttribute('required');
+        });
+        
+        // Mostrar elementos activos
+        const visibleDivs = [].concat(config.div || []);
+        const requiredInputs = [].concat(config.input || []);
+        
+        visibleDivs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'block';
+        });
+        requiredInputs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.setAttribute('required', '');
+        });
+      };
+      
+      select.addEventListener('change', () => {
+        updateDisplay();
+        
+        // Buscar formulario padre y obtener su identificador
+        const parentForm = select.closest('[cf-form-submit]');
+        const formIdentifier = parentForm?.getAttribute('cf-form-submit');
+        
+        // Disparar evento con identificador
+        document.dispatchEvent(new CustomEvent('cf-update-form', {
+          detail: { 
+            formIdentifier,
+            selectedValue: select.value // Incluye el valor técnico seleccionado
+          }
+        }));
+      });
+      
+      // Inicializar con el valor actual
+      updateDisplay();
+      
+    } catch (e) {
+      console.error('❌ Error en cf-select-display:', e);
+    }
+  });
+});
+</script>
+
+<!-- 🦜 cf-display 🦜 -->
+<script>
+  document.addEventListener("creatifornia-ready", handleDisplayLogic);
+
+  function handleDisplayLogic() {
+    const elements = document.querySelectorAll("[cf-display-key]");
+
+    elements.forEach((el) => {
+      const key = el.getAttribute("cf-display-key");
+      const path = el.getAttribute("cf-display-path");
+      const expected = el.getAttribute("cf-display-compare");
+
+      if (!key || !path) return;
+      if (expected === null) {
+        console.warn("⚠️ Falta el atributo cf-display-compare en:", el);
+      }
+
+      // Obtener datos desde localStorage
+      let data = localStorage.getItem(key);
+      try {
+        data = JSON.parse(data);
+      } catch {
+        data = null;
+      }
+
+      // Obtener valor desde el path
+      const actualValue = path.split('.').reduce(
+        (obj, prop) => (obj && obj[prop] !== undefined) ? obj[prop] : null,
+        data
+      );
+
+      // Evaluación del display
+      let shouldDisplay = false;
+      if (expected === "null") {
+        shouldDisplay = actualValue == null;
+      } else if (expected === "!null") {
+        shouldDisplay = actualValue != null;
+      } else {
+        shouldDisplay = String(actualValue) === expected;
+      }
+
+      el.style.display = shouldDisplay ? "" : "none";
+    });
+
+    // Emitir eventos de finalización
+    document.dispatchEvent(new CustomEvent("cf-display-ready"));
+      }
+</script>
+
+
+
+
+
+<!-- 🦜 cf-events-manager  (cf-inputs-ready)🦜 -->
+<script>
+  (function() {
+    const REQUIRED_EVENTS = [
+      "cf-fill-inputs-ready",
+      "cf-fill-select-ready",
+          ];
+
+    let receivedEvents = new Set();
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        console.log("✅ Events ready, triggering 'cf-inputs-ready'");
+        document.dispatchEvent(new Event("cf-inputs-ready"));
+        resetCoordinator(); // ⬅️ Reinicio automático justo después
+      }
+    }
+
+    function resetCoordinator() {
+      console.log("🔄 reset events manager");
+      receivedEvents.clear();
+    }
+
+    // Escucha todos los eventos requeridos
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          console.log(`📥 Evento recibido: ${eventName}`);
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script>
+
+<!-- 🦜 cf-form-submit (versión conservada) 🦜 -->
+<script>
+  // Manejadores de eventos actualizados
+  document.addEventListener("cf-inputs-ready", handleFormSubmission);
+  document.addEventListener("cf-update-form", handleFormUpdate);
+
+  function handleFormSubmission() {
+    const forms = document.querySelectorAll('[cf-form-submit]');
+    const MAX_ATTEMPTS = 8;
+    const RETRY_DELAY = 22000;
+
+    if (forms.length > 0) {
+      forms.forEach(form => {
+        const formId = form.getAttribute('cf-form-submit') || 'unnamed_form';
+        const endpoint = form.getAttribute('cf-endpoint') || '/default_endpoint';
+        const verb = (form.getAttribute('cf-verb') || 'patch').toLowerCase();
+
+        const oldHandler = form._submitHandler;
+        if (oldHandler) {
+          form.removeEventListener("submit", oldHandler);
+        }
+
+        const submitHandler = async (e) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          // Validación personalizada de campos con data-required
+          const customRequiredFields = form.querySelectorAll('[data-required]');
+          let customValid = true;
+
+          customRequiredFields.forEach(field => {
+            const value = field.value?.trim();
+            const message = field.getAttribute('data-required-message') || 'Este campo es obligatorio';
+
+            if (!value) {
+              alert(message);
+              customValid = false;
+            }
+          });
+
+          if (!customValid) {
+            form.removeAttribute('data-submitting');
+            return;
+          }
+
+          // Validación nativa
+          if (!form.checkValidity()) {
+            form.reportValidity();
+            form.removeAttribute('data-submitting');
+            return;
+          }
+
+          if (form.hasAttribute('data-submitting')) {
+            console.warn("⏸️ Formulario ya en proceso de envío");
+            return;
+          }
+          form.setAttribute('data-submitting', 'true');
+
+          const authToken = localStorage.getItem("AuthToken");
+          if (!authToken || typeof xano === 'undefined') {
+            console.error("❌ No AuthToken or Xano instance found");
+            form.removeAttribute('data-submitting');
+            return;
+          }
+
+          xano.setAuthToken(authToken);
+
+          const fields = form.querySelectorAll('[cf-json-path]');
+          const data = { form_id: formId };
+
+          fields.forEach(field => {
+            const path = field.getAttribute('cf-json-path');
+            if (!path) return;
+
+            let value;
+            const directInputValue = field.getAttribute('cf-direct-input');
+
+            if (directInputValue !== null) {
+              value = directInputValue;
+            } else if (field.type === 'checkbox') {
+              value = field.checked;
+            } else if (field.type === 'radio') {
+              if (!field.checked) return;
+              value = field.value;
+            } else if (field.tagName === 'SELECT' && field.multiple) {
+              value = Array.from(field.selectedOptions).map(opt => opt.value);
+            } else {
+              value = field.value;
+            }
+
+            const keys = path.split('.');
+            let current = data;
+            keys.forEach((key, index) => {
+              if (index === keys.length - 1) {
+                current[key] = value;
+              } else {
+                if (!current[key]) current[key] = {};
+                current = current[key];
+              }
+            });
+
+            const lsKey = field.getAttribute('update-local-storage-key');
+            const lsPath = field.getAttribute('update-local-storage-path');
+
+            if (lsKey && lsPath) {
+              let stored = {};
+              try {
+                stored = JSON.parse(localStorage.getItem(lsKey)) || {};
+              } catch (e) {
+                console.warn(`⚠️ No se pudo parsear localStorage["${lsKey}"], se usará objeto vacío`);
+              }
+
+              const pathKeys = lsPath.split('.');
+              let cursor = stored;
+              pathKeys.forEach((k, i) => {
+                if (i === pathKeys.length - 1) {
+                  cursor[k] = value;
+                } else {
+                  if (!cursor[k] || typeof cursor[k] !== 'object') cursor[k] = {};
+                  cursor = cursor[k];
+                }
+              });
+
+              localStorage.setItem(lsKey, JSON.stringify(stored));
+              console.log(`💾 LocalStorage actualizado "${lsKey}" →`, stored);
+            }
+          });
+
+          const submitWithRetry = async (attempt = 1) => {
+            try {
+              console.log(`📤 Envío intento #${attempt} a ${endpoint}`, data);
+              if (typeof xano[verb] !== 'function') throw new Error(`❌ HTTP verb not supported: ${verb}`);
+
+              const response = await xano[verb](endpoint, data);
+              console.log("📦 cf-form-submit Response:", response);
+
+              if (localStorage.getItem("uploadcare")) {
+                localStorage.removeItem("uploadcare");
+                console.log("🧹 Se eliminó 'uploadcare' del localStorage");
+              }
+
+              if (response?.body?.event) {
+                const eventName = response.body.event;
+                const eventData = response.body.data || {};
+                console.log(`🎯 Disparando evento: ${eventName}`, eventData);
+                document.dispatchEvent(new CustomEvent(eventName, {
+                  detail: eventData,
+                  bubbles: true
+                }));
+              }
+
+              if (response?.body?.redirect_url) {
+                window.location.href = response.body.redirect_url;
+                return;
+              }
+
+              if (response?.body?.error) {
+                showErrorModal(response.body.error);
+                return;
+              }
+
+              if (response?.body === "retry") {
+                console.warn("⏳ Respuesta 'retry' recibida. Reintentando en 22 segundos...");
+                if (attempt < MAX_ATTEMPTS) {
+                  setTimeout(() => submitWithRetry(attempt + 1), RETRY_DELAY);
+                } else {
+                  showErrorModal("Demasiados intentos. Por favor intenta más tarde.");
+                }
+                return;
+              }
+
+              console.log("✅ Formulario enviado correctamente");
+
+            } catch (error) {
+              console.error(`❌ Error en envío a ${endpoint}:`, error);
+              showErrorModal("Error al enviar. Intenta más tarde.");
+            } finally {
+              form.removeAttribute('data-submitting');
+            }
+          };
+
+          submitWithRetry();
+        };
+
+        form._submitHandler = submitHandler;
+        form.addEventListener("submit", submitHandler);
+      });
+
+      document.dispatchEvent(new Event("cf-submit-ready"));
+    } else {
+      console.warn("⚠️ No se encontraron formularios con [cf-form-submit]");
+    }
+  }
+
+  function handleFormUpdate(e) {
+    if (!e.detail?.formIdentifier) {
+      console.error("❌ cf-update-form recibido sin formIdentifier");
+      return;
+    }
+    
+    const form = document.querySelector(`[cf-form-submit="${e.detail.formIdentifier}"]`);
+    if (form) {
+      // Mantenemos exactamente la misma lógica de handleFormSubmission pero para un solo formulario
+      const formId = form.getAttribute('cf-form-submit') || 'unnamed_form';
+      const endpoint = form.getAttribute('cf-endpoint') || '/default_endpoint';
+      const verb = (form.getAttribute('cf-verb') || 'patch').toLowerCase();
+      const MAX_ATTEMPTS = 8;
+      const RETRY_DELAY = 22000;
+
+      const oldHandler = form._submitHandler;
+      if (oldHandler) {
+        form.removeEventListener("submit", oldHandler);
+      }
+
+      const submitHandler = async (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const customRequiredFields = form.querySelectorAll('[data-required]');
+        let customValid = true;
+
+        customRequiredFields.forEach(field => {
+          const value = field.value?.trim();
+          const message = field.getAttribute('data-required-message') || 'Este campo es obligatorio';
+
+          if (!value) {
+            alert(message);
+            customValid = false;
+          }
+        });
+
+        if (!customValid) {
+          form.removeAttribute('data-submitting');
+          return;
+        }
+
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          form.removeAttribute('data-submitting');
+          return;
+        }
+
+        if (form.hasAttribute('data-submitting')) {
+          console.warn("⏸️ Formulario ya en proceso de envío");
+          return;
+        }
+        form.setAttribute('data-submitting', 'true');
+
+        const authToken = localStorage.getItem("AuthToken");
+        if (!authToken || typeof xano === 'undefined') {
+          console.error("❌ No AuthToken or Xano instance found");
+          form.removeAttribute('data-submitting');
+          return;
+        }
+
+        xano.setAuthToken(authToken);
+
+        const fields = form.querySelectorAll('[cf-json-path]');
+        const data = { form_id: formId };
+
+        fields.forEach(field => {
+          const path = field.getAttribute('cf-json-path');
+          if (!path) return;
+
+          let value;
+          const directInputValue = field.getAttribute('cf-direct-input');
+
+          if (directInputValue !== null) {
+            value = directInputValue;
+          } else if (field.type === 'checkbox') {
+            value = field.checked;
+          } else if (field.type === 'radio') {
+            if (!field.checked) return;
+            value = field.value;
+          } else if (field.tagName === 'SELECT' && field.multiple) {
+            value = Array.from(field.selectedOptions).map(opt => opt.value);
+          } else {
+            value = field.value;
+          }
+
+          const keys = path.split('.');
+          let current = data;
+          keys.forEach((key, index) => {
+            if (index === keys.length - 1) {
+              current[key] = value;
+            } else {
+              if (!current[key]) current[key] = {};
+              current = current[key];
+            }
+          });
+
+          const lsKey = field.getAttribute('update-local-storage-key');
+          const lsPath = field.getAttribute('update-local-storage-path');
+
+          if (lsKey && lsPath) {
+            let stored = {};
+            try {
+              stored = JSON.parse(localStorage.getItem(lsKey)) || {};
+            } catch (e) {
+              console.warn(`⚠️ No se pudo parsear localStorage["${lsKey}"], se usará objeto vacío`);
+            }
+
+            const pathKeys = lsPath.split('.');
+            let cursor = stored;
+            pathKeys.forEach((k, i) => {
+              if (i === pathKeys.length - 1) {
+                cursor[k] = value;
+              } else {
+                if (!cursor[k] || typeof cursor[k] !== 'object') cursor[k] = {};
+                cursor = cursor[k];
+              }
+            });
+
+            localStorage.setItem(lsKey, JSON.stringify(stored));
+            console.log(`💾 LocalStorage actualizado "${lsKey}" →`, stored);
+          }
+        });
+
+        const submitWithRetry = async (attempt = 1) => {
+          try {
+            console.log(`📤 Envío intento #${attempt} a ${endpoint}`, data);
+            if (typeof xano[verb] !== 'function') throw new Error(`❌ HTTP verb not supported: ${verb}`);
+
+            const response = await xano[verb](endpoint, data);
+            console.log("📦 cf-form-submit Response:", response);
+
+            if (localStorage.getItem("uploadcare")) {
+              localStorage.removeItem("uploadcare");
+              console.log("🧹 Se eliminó 'uploadcare' del localStorage");
+            }
+
+            if (response?.body?.event) {
+              const eventName = response.body.event;
+              const eventData = response.body.data || {};
+              console.log(`🎯 Disparando evento: ${eventName}`, eventData);
+              document.dispatchEvent(new CustomEvent(eventName, {
+                detail: eventData,
+                bubbles: true
+              }));
+            }
+
+            if (response?.body?.redirect_url) {
+              window.location.href = response.body.redirect_url;
+              return;
+            }
+
+            if (response?.body?.error) {
+              showErrorModal(response.body.error);
+              return;
+            }
+
+            if (response?.body === "retry") {
+              console.warn("⏳ Respuesta 'retry' recibida. Reintentando en 22 segundos...");
+              if (attempt < MAX_ATTEMPTS) {
+                setTimeout(() => submitWithRetry(attempt + 1), RETRY_DELAY);
+              } else {
+                showErrorModal("Demasiados intentos. Por favor intenta más tarde.");
+              }
+              return;
+            }
+
+            console.log("✅ Formulario enviado correctamente");
+
+          } catch (error) {
+            console.error(`❌ Error en envío a ${endpoint}:`, error);
+            showErrorModal("Error al enviar. Intenta más tarde.");
+          } finally {
+            form.removeAttribute('data-submitting');
+          }
+        };
+
+        submitWithRetry();
+      };
+
+      form._submitHandler = submitHandler;
+      form.addEventListener("submit", submitHandler);
+    }
+  }
+
+  function showErrorModal(message) {
+    const modal = document.getElementById('error-modal');
+    const messageElement = document.getElementById('error-message');
+
+    if (modal && messageElement) {
+      messageElement.innerText = message;
+      modal.style.display = 'flex';
+    } else {
+      console.error("❌ Modal elements not found in DOM");
+    }
+  }
+
+  function closeErrorModal() {
+    const modal = document.getElementById('error-modal');
+    if (modal) modal.style.display = 'none';
+  }
+</script>
+
+
+<!-- 🦜 cf-events-manager  (cf-loader-off)🦜 -->
+<script>
+  (function() {
+    const REQUIRED_EVENTS = [
+      "cf-display-ready",
+      "cf-submit-ready",
+      "cf-text-ready",
+                ];
+
+    let receivedEvents = new Set();
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        console.log("✅ Events ready, triggering 'cf-loader-off'");
+        document.dispatchEvent(new Event("cf-loader-off"));
+        resetCoordinator(); // ⬅️ Reinicio automático justo después
+      }
+    }
+
+    function resetCoordinator() {
+      console.log("🔄 reset events manager");
+      receivedEvents.clear();
+    }
+
+    // Escucha todos los eventos requeridos
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          console.log(`📥 Evento recibido: ${eventName}`);
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 💙 MEMBERSCRIPT #77 v0.1 💙 UNIVERSAL EMOJIS -->
+<script>
+document.querySelectorAll('[ms-code-emoji]').forEach(element => {
+  var imageUrl = element.getAttribute('ms-code-emoji');
+  var img = document.createElement('img');
+  img.src = imageUrl;
+
+  var textStyle = window.getComputedStyle(element);
+  var adjustedHeight = parseFloat(textStyle.fontSize) * 1.0;
+
+  img.style.height = adjustedHeight + 'px';
+  img.style.width = 'auto';
+  img.style.verticalAlign = 'text-top';
+
+  element.innerHTML = ''; // Clears the text content inside the span
+  element.appendChild(img);
+});
+</script>
+
+<!-- 💙 MEMBERSCRIPT #7 v0.2 💙 DELAY LOADING ELEMENTS + AUTO CLICK -->
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const elementsToDelay = document.querySelectorAll('[ms-code-delay]');
+    const openTrigger = document.getElementById("open");
+
+    elementsToDelay.forEach(element => {
+      element.style.visibility = "hidden"; // Ocultar inicialmente
+    });
+
+    setTimeout(function() {
+      let animationsCompleted = 0;
+
+      elementsToDelay.forEach(element => {
+        element.style.visibility = "visible";
+        element.style.opacity = "0";
+        element.style.animation = "fadeIn 0.5s";
+
+        element.addEventListener("animationend", function handler() {
+          element.style.opacity = "1";
+          element.removeEventListener("animationend", handler); // Evita duplicados
+
+          animationsCompleted++;
+          // Cuando todas las animaciones hayan terminado
+          if (animationsCompleted === elementsToDelay.length && openTrigger) {
+            console.log("🎯 Todas las animaciones completadas. Haciendo clic en #open...");
+            openTrigger.click();
+          }
+        });
+      });
+    }, 1500);
+  });
+</script>
+
+<style>
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+</style>
+
+
+      
+<!-- /////////🌴refresh🌴///////// -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const alreadyRefreshed = sessionStorage.getItem("cf-refreshed");
+
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+
+  const hasRefreshParam = params.has("refresh");
+  const hasForceParam = params.has("force");
+
+  // ✅ Forzar refresh si "force" está presente, ignorando el flag de sessionStorage
+  if ((hasRefreshParam && !alreadyRefreshed) || hasForceParam) {
+    sessionStorage.setItem("cf-refreshed", "true");
+    console.log("🔁 Refrescando página por parámetro ?refresh o ?force...");
+
+    // Elimina los parámetros "refresh" y "force" de la URL
+    params.delete("refresh");
+    params.delete("force");
+
+    // Reconstruye la URL con los parámetros restantes
+    const newUrl = url.pathname + (params.toString() ? '?' + params.toString() : '') + url.hash;
+
+    setTimeout(() => {
+      window.location.href = newUrl;
+    }, 500);
+  }
+});
+</script>
+
+       
+
+
+
+       
+       
+       
+       
+       <!-- /////////🌴STARTER🌴///////// -->
+      
+      <script>
+        (function() {
+          const params = new URLSearchParams(window.location.search);
+          const plan = params.get("plan");
+      
+          if (plan === "starter") {
+            // 👇 Tus scripts van aquí 👇
+      
+           //🦜 CREATFORNIA GET countries (public) v1  🦜 //
+      
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/countries').then((response) => {
+                if (response?.body?.countries) {
+                  localStorage.setItem("countriesJSON", JSON.stringify(response.body));
+                  console.log("✅ countriesJSON guardado correctamente");
+                  document.dispatchEvent(new CustomEvent("cf-countries-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /countries no contenía la propiedad 'countries' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /countries de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /countries.");
+            }
+          });
+        
+        
+          
+        
+        //🦜 CREATFORNIA SELECT COUNTRIES v1 🦜 select-from-json="countries //
+      
+          async function fillCountriesSelects() {
+            const jsonString = localStorage.getItem("countriesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const countries = data.countries;
+        
+            const selects = document.querySelectorAll('[select-from-json="countries"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Your country';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // 🗺️ Agrega países
+              countries.forEach(countries => {
+                const option = document.createElement('option');
+                option.value = countries.id;
+                option.textContent = countries.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select construido: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+                    document.addEventListener("cf-countries-ready", fillCountriesSelects);
+      
+        
+         
+        
+        
+        //<!-- 🦜 CREATFORNIA GET profiles v1 (public)🦜 -->//
+        
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/profiles').then((response) => {
+                if (response?.body?.profiles) {
+                  localStorage.setItem("profilesJSON", JSON.stringify(response.body));
+                  console.log("✅ profilesJSON guardado correctamente");
+                  document.dispatchEvent(new CustomEvent("cf-profiles-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /profiles no contenía la propiedad 'profiles' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /profiles de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /profiles.");
+            }
+          });
+      
+        
+        
+          
+        
+        //<!-- 💙 🦜 CREATFORNIA SELECT PROFILES v1 🦜 select-from-json="profiles -->//
+      
+          async function fillProfilesSelects() {
+            const jsonString = localStorage.getItem("profilesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const profiles = data.profiles;
+        
+            const selects = document.querySelectorAll('[select-from-json="profiles"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Describe yourself';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // Agrega profiles
+              profiles.forEach(profiles => {
+                const option = document.createElement('option');
+                option.value = profiles.id;
+                option.textContent = profiles.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select construido: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+               document.addEventListener("cf-profiles-ready", fillProfilesSelects);
+      
+      
+            // 👆 Fin de tus scripts 👆
+          } else {
+            console.log("Plan no es 'starter'. Scripts ignorados.");
+          }
+        })();
+      </script>
+       
+       
+       
+       
+       
+       
+ <!-- /////////🌴Printify🌴///////// -->
+<!--  🦜 cf-printify-accepted 🦜 -->
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    // Obtener los parámetros "code" y "state" de la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+
+    // Si no hay code, no hacemos nada
+    if (!code) return;
+
+    // Prevenir múltiples envíos
+    if (sessionStorage.getItem("printify_code_sent")) return;
+
+    const endpoint = "/oauth_states/accepted_0";
+    const verb = "post";
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (!authToken || typeof xano === 'undefined') {
+      console.error("❌ No AuthToken or Xano instance found");
+      return;
+    }
+
+    xano.setAuthToken(authToken);
+
+    try {
+      if (typeof xano[verb] !== 'function') {
+        throw new Error(`❌ HTTP verb not supported: ${verb}`);
+      }
+
+      const payload = { code, state };
+      const response = await xano[verb](endpoint, payload);
+
+      console.log(`✅ ${verb.toUpperCase()} to ${endpoint}`);
+      console.log("📦 cf-printify-accepted Response:", response);
+
+      // Manejo de redirección si viene en la respuesta
+      if (response.body?.redirect_url) {
+        console.log("🔀 Redirigiendo a:", response.body.redirect_url);
+        window.location.href = response.body.redirect_url;
+        return;
+      }
+
+      // Marcar como enviado
+      sessionStorage.setItem("printify_code_sent", "true");
+
+    } catch (error) {
+      console.error("❌ Error al enviar código a Xano:", error);
+    }
+  });
+</script>
+
+            
+        
+      
+      
+      
+ 
+      
+      
+
+      
+      
+        <!-- /////////🌴FUNCIONALITIES 🌴///////// -->
+
+      <!-- 🦜 cf-display or hide id 🦜 -->
+<script>
+  function waitForElement(id, timeout = 3000) {
+    return new Promise((resolve, reject) => {
+      const intervalTime = 100;
+      let timePassed = 0;
+
+      const check = () => {
+        const el = document.getElementById(id);
+        if (el) {
+          resolve(el);
+        } else if (timePassed >= timeout) {
+          reject(`⏱️ Elemento con ID "${id}" no encontrado`);
+        } else {
+          timePassed += intervalTime;
+          setTimeout(check, intervalTime);
+        }
+      };
+
+      check();
+    });
+  }
+
+  // Mostrar elemento
+  document.addEventListener("cf-display-id", async (e) => {
+    const id = e.detail?.id;
+    if (!id) return;
+
+    try {
+      const el = await waitForElement(id);
+
+      // ✅ Mostrar visualmente
+      el.style.display = "";
+      el.removeAttribute("hidden");
+
+      // ✅ Eliminar clase 'hidden' si existe
+      el.classList.remove("hidden");
+
+      console.log(`👁️ Mostrado: #${id}`);
+    } catch (err) {
+      console.warn(err);
+    }
+  });
+
+  // Ocultar elemento
+  document.addEventListener("cf-hide-id", async (e) => {
+    const id = e.detail?.id;
+    if (!id) return;
+
+    try {
+      const el = await waitForElement(id);
+
+      // ✅ Ocultar visualmente
+      el.style.display = "none";
+      el.setAttribute("hidden", "true");
+
+      // ✅ Agregar clase 'hidden' si se desea mantener consistencia
+      el.classList.add("hidden");
+
+      console.log(`🙈 Oculto: #${id}`);
+    } catch (err) {
+      console.warn(err);
+    }
+  });
+</script>
+      
+      <!-- 🦜 cf-mirror-click 🦜 -->
+      <script>
+          // Encuentra todos los elementos con el atributo cf-click-trigger
+          const clickTriggers = document.querySelectorAll('[cf-click-trigger]');
+        
+          clickTriggers.forEach(trigger => {
+            const id = trigger.getAttribute('cf-click-trigger');
+        
+            trigger.addEventListener('click', () => {
+              const target = document.querySelector(`[cf-click-target="${id}"]`);
+              if (!target) {
+                console.warn(`No element found with cf-click-target="${id}"`);
+                return;
+              }
+        
+              target.click(); // Ejecuta el clic en el elemento objetivo
+            });
+          });
+        </script>
+        
+
+      <!-- 🦜 cf-event-on-click 
+ ejemplo:
+  cf-event-on-click="productSelected"
+  cf-event-details='{"id": "P-123", "name": "Zapatos", "price": 59.99}'>
+ 🦜 -->
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Selecciona todos los elementos con el atributo cf-event-on-click
+  const eventElements = document.querySelectorAll('[cf-event-on-click]');
+  
+  eventElements.forEach(element => {
+    element.addEventListener('click', function(e) {
+      // Obtener el nombre del evento
+      const eventName = element.getAttribute('cf-event-on-click');
+      if (!eventName) return;
+      
+      // Parsear los detalles del evento (solo formato JSON)
+      let eventDetails = {};
+      const detailsAttr = element.getAttribute('cf-event-details');
+      
+      if (detailsAttr) {
+        try {
+          eventDetails = JSON.parse(detailsAttr);
+        } catch (error) {
+          console.error('Error parsing JSON event details:', error);
+          return; // Salir si hay error en el JSON
+        }
+      }
+      
+      // Crear y disparar el evento personalizado
+      const customEvent = new CustomEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        detail: {
+          element: element,
+          ...eventDetails
+        }
+      });
+      
+      element.dispatchEvent(customEvent);
+      console.log(`Event "${eventName}" dispatched with details:`, customEvent.detail);
+    });
+  });
+});
+</script>
+        
+         <!-- /////////🌴UPLOADCARE 🌴///////// -->       
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
+
+<script type="module">
+  import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
+  import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
+
+  // Define el locale español
+  UC.defineLocale('es', es);
+
+  // Define los componentes después de definir el locale
+  UC.defineComponents(UC);
+</script>
+
+
+
+
+
+
+
+
+
+<!-- 🦜 MODAL response error  🦜 -->
+
+<div id="error-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:#292626; padding:2rem; border-radius:1rem; max-width:400px; width:90%; text-align:center; color:#e7cfb1; font-family:sans-serif; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+      <h2 style="margin-bottom:1rem; font-size:18px;">🔔</h2> <!-- Título más pequeño -->
+      <p id="error-message" style="margin-bottom:2rem; font-size:20px; font-weight:bold;"></p> <!-- Mensaje más grande -->
+      <button onclick="closeErrorModal()" style="background:#e5813e; color:#292626; border:none; padding:0.75rem 1.5rem; border-radius:0.5rem; cursor:pointer; font-weight:bold;">
+        Close
+      </button>
+    </div>
+  </div>
+
+
+
+
+
+
