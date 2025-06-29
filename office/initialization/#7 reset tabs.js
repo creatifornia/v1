@@ -1,0 +1,1 @@
+document.addEventListener("DOMContentLoaded",(function(){function e(){document.querySelectorAll('[name="cf-reset-tabs"]').forEach((e=>{const t=e.closest("[data-w-tab]");t&&(t.setAttribute("data-w-tab","none"),console.log("✅ Pestaña reseteada:",t))})),document.dispatchEvent(new Event("cf-tabs-ready"))}e(),document.addEventListener("cf-reset-tabs",e)}));
