@@ -61,7 +61,7 @@
 
 
 
-<!-- 🦜 #3 GET Options (versión con espera controlada + transformaciones) 🦜 -->
+<!-- 🦜 #3 GET Options (versión con espera controlada) 🦜 -->
 <script type="text/javascript">
   document.addEventListener("creatifornia-ready", initOptions);
   document.addEventListener("update-options", initOptions);
@@ -70,48 +70,23 @@
     const existing = localStorage.getItem("options");
     const authToken = localStorage.getItem("AuthToken");
     
-    // Función para convertir array a objeto (primera transformación)
-    const transformOptions = (optionsArray) => {
-      return optionsArray.reduce((acc, item) => {
-        const key = Object.keys(item)[0];
-        acc[key] = item[key];
-        return acc;
-      }, {});
-    };
-    
-    // Función para optimizar estructura anidada (segunda transformación)
-    const optimizeOptionsStructure = (optionsObj) => {
-      return Object.fromEntries(
-        Object.entries(optionsObj).map(([category, items]) => {
-          const optionsItem = items.find(item => item.options);
-          const messageItem = items.find(item => item.message);
-          
-          return [
-            category,
-            {
-              options: optionsItem?.options || [],
-              message: messageItem?.message || 'Elige una opción'
-            }
-          ];
-        })
-      );
-    };
-
     // Función para intentar obtener los parámetros
     const getParamsWithRetry = (attempt = 0) => {
       const maxAttempts = 30;
-      const retryDelay = 50;
+      const retryDelay = 50; // 300ms entre intentos
       
       const offices = JSON.parse(localStorage.getItem("offices") || "{}");
       const lang = offices.country?.lang?.ISO_639;
       const countryCode = offices.country?.ISO_3166_1_alfa_2;
       
+      // Si tenemos los parámetros o es el último intento
       if ((lang && countryCode) || attempt >= maxAttempts) {
         const finalLang = lang || 'es';
         const finalCountry = countryCode || 'MX';
         return { lang: finalLang, country: finalCountry };
       }
       
+      // Si no, reintentar después de un pequeño delay
       return new Promise(resolve => {
         setTimeout(() => {
           resolve(getParamsWithRetry(attempt + 1));
@@ -127,6 +102,7 @@
     if (authToken) {
       xano.setAuthToken(authToken);
       
+      // Usamos async/await para manejar la espera
       (async () => {
         try {
           const { lang, country } = await getParamsWithRetry();
@@ -134,18 +110,8 @@
           
           const response = await xano.get(apiUrl);
           if (response?.body) {
-            // Aplicar ambas transformaciones
-            const transformedOptions = transformOptions(response.body);
-            const optimizedOptions = optimizeOptionsStructure(transformedOptions);
-            
-            localStorage.setItem("options", JSON.stringify(optimizedOptions));
-            
-            console.log("✅ Options optimized and loaded:", { 
-              lang, 
-              country,
-              structure: optimizedOptions 
-            });
-            
+            localStorage.setItem("options", JSON.stringify(response.body));
+            console.log("✅ Options loaded with params:", { lang, country });
             document.dispatchEvent(new Event("cf-options-ready"));
           }
         } catch (error) {
@@ -257,6 +223,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 </script>
  
+ 
 
 <!-- 🦜 #5 fill-inputs 🦜 -->
 <script type="text/javascript">
@@ -337,8 +304,13 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 </script>
 
+     
 
-  <!-- 🦜 cf-display 🦜 -->
+
+
+
+
+<!-- 🦜 cf-display 🦜 -->
 <script>
   document.addEventListener("creatifornia-ready", handleDisplayLogic);
 
@@ -385,7 +357,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Emitir eventos de finalización
     document.dispatchEvent(new CustomEvent("cf-display-ready"));
       }
-</script>   
+</script>
+
+
 
 
 
@@ -402,27 +376,11 @@ document.addEventListener('DOMContentLoaded', function() {
       const componentId = container.getAttribute("cf-options-build");
       const inputType = container.getAttribute("cf-options-type") || "checkbox";
       const key = container.getAttribute("cf-options-key");
-      const path = `${container.getAttribute("cf-options-path")}.options`;
+      const path = container.getAttribute("cf-options-path");
+      const lang = container.getAttribute("cf-options-lang") || "es";
       const activeClass = container.getAttribute("cf-options-active") || "is-active-inputactive";
       const limit = container.getAttribute("cf-checkbox-limit");
-      const cfRequired = container.getAttribute("cf-required");
-      const requiredPath = `${key}.${container.getAttribute("cf-options-path")}.message`;
-        let cfMessage = "";
-
-        if (requiredPath) {
-        const [lsKey, ...pathParts] = requiredPath.split(".");
-        if (lsKey && pathParts.length > 0) {
-        try {
-        const stored = JSON.parse(localStorage.getItem(lsKey));
-        cfMessage = pathParts.reduce((acc, part) => acc && acc[part], stored) || "Select one option";
-        } catch {
-        cfMessage = "Select one option";
-        }
-        } else {
-        cfMessage = "Select an option";
-        }
-        }
-
+      const cfRequired = container.getAttribute("cf-required");  
 
       const isParent = container.hasAttribute("cf-options-parent");
       const isChild = container.hasAttribute("cf-options-child");
@@ -474,7 +432,6 @@ document.addEventListener('DOMContentLoaded', function() {
       hiddenInput.setAttribute("cf-json-path", path);
       hiddenInput.setAttribute("name", path);
       hiddenInput.value = "[]";
-      hiddenInput.setAttribute("data-required-message", cfMessage);
       
       if (inputType === "checkbox" && limit && limit !== "") {
       hiddenInput.setAttribute("cf-checkbox-limit", limit);
@@ -482,11 +439,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
       if (isChild) {
         // Añadir atributos para ser detectado por cf-form-submit como campo obligatorio condicional
-      hiddenInput.setAttribute("cf-options-display-input", childGroupName);
+        hiddenInput.setAttribute("data-required-message", "child");
+        hiddenInput.setAttribute("cf-options-display-input", childGroupName);
       }
 
       if (isParent && cfRequired === "true") {
-      hiddenInput.setAttribute("data-required", "");  // <-- Corregido: añadido el valor vacío
+      hiddenInput.setAttribute("data-required-message", "parent");
+      hiddenInput.setAttribute("cf-required", "");  // <-- Corregido: añadido el valor vacío
       }
 
       groupClone.appendChild(hiddenInput);
@@ -569,7 +528,7 @@ document.addEventListener("cf-fill-options-ready", () => {
                       : null;
           
           if (limit !== null && arr.length >= limit) {
-            showErrorModal(`Selecciona máximo ${limit} opciones.`);
+            alert(`Selecciona máximo ${limit} opciones.`);
             input.checked = false; // 🔄 Revertir el cambio
             return; // ⛔ Salir sin aplicar cambios
           }
@@ -778,7 +737,7 @@ document.addEventListener("cf-fill-options-ready", () => {
       e.preventDefault();
       e.stopImmediatePropagation();
 
-      const customRequiredFields = form.querySelectorAll('[data-required]');
+      const customRequiredFields = form.querySelectorAll('[data-required], [cf-required]');
       let customValid = true;
 
       customRequiredFields.forEach(field => {

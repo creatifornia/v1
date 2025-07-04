@@ -1,0 +1,248 @@
+✅ Resumen de funcionalidades:
+📌 Atributos en el div contenedor:
+
+    cf-options-build="componente-id" → Define qué plantilla usar (vía data-options-component).
+
+    cf-options-type="checkbox" o "radio" → Tipo de input a generar.
+
+    cf-options-key="options" → Key de localStorage.
+
+    cf-options-path="ruta.anidada" → Path para acceder al array.
+
+    cf-options-lang="es" → Idioma (es, en, etc.) para seleccionar es_value y es_label.
+
+    cf-options-parent="grupo" → Marca que este componente debe emitir comportamiento display o required.
+
+    cf-options-child="grupo" → Este grupo se oculta inicialmente, se espera que un parent lo active.
+
+    cf-options-active="clase-activa" (opcional) → Clase CSS que se activa visualmente en los inputs.
+
+📌 Estructura de plantilla:
+
+    <div data-options-component="componente-id"> → Plantilla completa
+
+    <div data-options-group> → Contenedor que se va a clonar
+
+    <label data-options-field> → Campo individual
+
+    <input data-options-button> → Checkbox o radio
+
+    <span data-options-label> → Etiqueta visible
+
+📌 Output:
+
+    Clona cada campo con sus atributos dinámicos.
+
+    Agrega el input type="hidden" con el valor serializado (array de objetos { value, label }).
+
+    Oculta el componente original base.
+
+    Dispara cf-fill-options-ready al finalizar.
+
+¿Quieres ahora continuar con cf-options-display, que reaccionará a los clics y mostrará/ocultará divs e inputs según lo seleccionado?
+
+
+<!-- 🧱 cf-options-builder (versión dinámica y modular) -->
+<script>
+  document.addEventListener("cf-options-ready", buildOptionGroups);
+  document.addEventListener("cf-build-options-trigger", buildOptionGroups);
+
+  function buildOptionGroups() {
+    const containers = document.querySelectorAll("[cf-options-build]");
+    
+    containers.forEach(container => {
+      const componentId = container.getAttribute("cf-options-build");
+      const inputType = container.getAttribute("cf-options-type") || "checkbox";
+      const key = container.getAttribute("cf-options-key");
+      const path = container.getAttribute("cf-options-path");
+      const lang = container.getAttribute("cf-options-lang") || "es";
+      const activeClass = container.getAttribute("cf-options-active") || "is-active-inputactive";
+
+      const isParent = container.hasAttribute("cf-options-parent");
+      const isChild = container.hasAttribute("cf-options-child");
+
+      const valueField = `${lang}_value`;
+      const labelField = `${lang}_label`;
+
+      const template = document.querySelector(`[data-options-component="${componentId}"]`);
+      if (!template) {
+        console.error(`❌ No se encontró template data-options-component="${componentId}"`);
+        return;
+      }
+
+      const baseGroup = template.querySelector("[data-options-group]");
+      const fieldTemplate = template.querySelector("[data-options-field]");
+
+      if (!baseGroup || !fieldTemplate) {
+        console.error("❌ La plantilla necesita [data-options-group] y [data-options-field]");
+        return;
+      }
+
+      // Obtener y validar datos
+      let data;
+      try {
+        data = JSON.parse(localStorage.getItem(key));
+      } catch {
+        console.warn(`⚠️ localStorage["${key}"] inválido.`);
+        return;
+      }
+
+      const list = path.split('.').reduce((acc, prop) => acc && acc[prop], data);
+      if (!Array.isArray(list) || list.length === 0) {
+        console.warn(`⚠️ Lista no encontrada en ${key} → ${path}`);
+        return;
+      }
+
+      const groupClone = baseGroup.cloneNode(false);
+      groupClone.setAttribute("data-options-group", ""); // asegurar atributo en clonado
+
+      // Marcar como child oculto
+      if (isChild) {
+        groupClone.style.display = "none";
+        groupClone.setAttribute("cf-options-display-target", path); // opcional para lookup
+      }
+
+      const hiddenInput = document.createElement("input");
+      hiddenInput.type = "hidden";
+      hiddenInput.setAttribute("cf-json-path", path);
+      hiddenInput.setAttribute("name", path);
+      hiddenInput.value = "[]";
+      groupClone.appendChild(hiddenInput);
+
+      list.forEach(item => {
+        const field = fieldTemplate.cloneNode(true);
+        field.classList.remove(activeClass);
+
+        const input = field.querySelector("[data-options-button]");
+        const label = field.querySelector("[data-options-label]");
+
+        if (!input || !label) return;
+
+        input.type = inputType;
+        input.setAttribute("cf-options-value", item[valueField]);
+        input.setAttribute("cf-options-label", item[labelField]);
+        input.setAttribute("cf-options-path", path);
+        input.setAttribute("cf-options-active", activeClass);
+
+        // Parent tracking (para futuras acciones)
+        if (isParent) {
+          input.setAttribute("cf-options-display-input", path);
+          input.setAttribute("cf-options-display-div", path);
+        }
+
+        label.textContent = item[labelField];
+
+        groupClone.appendChild(field);
+      });
+
+      container.appendChild(groupClone);
+    });
+
+    // Ocultar plantilla
+    document.querySelectorAll("[data-options-component]").forEach(el => {
+      el.style.display = "none";
+    });
+
+    document.dispatchEvent(new Event("cf-fill-options-ready"));
+  }
+</script>
+
+
+<!-- 🧱 cf-options-display (vinculación de inputs/divs a opciones seleccionadas) -->
+<script>
+  document.addEventListener("cf-fill-options-ready", () => {
+    const allInputs = document.querySelectorAll("[cf-options-value]");
+
+    allInputs.forEach(input => {
+      input.addEventListener("change", () => {
+        const path = input.getAttribute("cf-options-path");
+        const value = input.getAttribute("cf-options-value");
+        const isChecked = input.checked;
+
+        const parent = input.closest("[cf-options-parent]");
+        if (!parent) return;
+
+        const identifier = parent.getAttribute("cf-options-parent");
+        if (!identifier) return;
+
+        // Mostrar u ocultar DIVs relacionados
+        const divs = document.querySelectorAll(`[cf-options-display-div="${identifier}"]`);
+        divs.forEach(div => {
+          const match = div.getAttribute("data-options-value") === value;
+          div.style.display = (match && isChecked) ? "block" : "none";
+        });
+
+        // Requerir o no los inputs relacionados
+        const targets = document.querySelectorAll(`[cf-options-display-input="${identifier}"]`);
+        targets.forEach(target => {
+          const match = target.getAttribute("data-options-value") === value;
+          if (match && isChecked) {
+            target.setAttribute("required", "");
+          } else {
+            target.removeAttribute("required");
+          }
+        });
+
+        // Disparar evento para actualizar formulario
+        const form = input.closest("[cf-form-submit]");
+        const formIdentifier = form?.getAttribute("cf-form-submit");
+        if (formIdentifier) {
+          document.dispatchEvent(new CustomEvent("cf-update-form", {
+            detail: { formIdentifier }
+          }));
+        }
+      });
+    });
+  });
+</script>
+
+
+<!-- 🎯 cf-options-handler (versión depurada) -->
+<script>
+document.addEventListener("cf-fill-options-ready", () => {
+  document.querySelectorAll("[cf-options-value]").forEach(input => {
+    input.addEventListener("change", () => {
+      const value = input.getAttribute("cf-options-value");
+      const label = input.getAttribute("cf-options-label");
+      const path = input.getAttribute("cf-options-path");
+      const type = input.type;
+
+      const field = input.closest("[data-options-field]");
+      const group = input.closest("[data-options-group]");
+      if (!path || !group) return;
+
+      const hidden = group.querySelector(`input[type="hidden"][cf-json-path="${path}"]`);
+      if (!hidden) {
+        console.error(`No input hidden con cf-json-path="${path}"`, group);
+        return;
+      }
+
+      let arr = [];
+      try { arr = JSON.parse(hidden.value || "[]"); }
+      catch { arr = []; console.warn("Error parseando JSON:", hidden.value); }
+
+      const entry = { value, label };
+
+      if (type === "checkbox") {
+        const isActive = input.checked;
+        field?.classList.toggle(input.getAttribute("cf-options-active"), isActive);
+
+        const exists = arr.some(item => item.value === value);
+        if (isActive && !exists) arr.push(entry);
+        if (!isActive && exists) arr = arr.filter(item => item.value !== value);
+      }
+      else if (type === "radio") {
+        group.querySelectorAll(`[type="radio"][cf-options-path="${path}"]`)
+             .forEach(r => r.closest("[data-options-field]")?.classList.remove(input.getAttribute("cf-options-active")));
+        field?.classList.add(input.getAttribute("cf-options-active"));
+        arr = [entry];
+      }
+
+      hidden.value = JSON.stringify(arr);
+      console.log("📦 hidden value:", hidden.value);
+    });
+  });
+});
+</script>
+
+
