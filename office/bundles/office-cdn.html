@@ -1,0 +1,1316 @@
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/1-loader.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/2-get-creatifornia.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/3-get-options.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/4-fill-text.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/5-fill-inputs.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/init/6-reset-tabs.js" defer></script>
+
+
+<!-- 🦜 #7 cf-display 🦜 -->
+<script>
+  document.addEventListener("creatifornia-ready", handleDisplayLogic);
+
+  function handleDisplayLogic() {
+    const elements = document.querySelectorAll("[cf-display-key]");
+
+    elements.forEach((el) => {
+      const key = el.getAttribute("cf-display-key");
+      const path = el.getAttribute("cf-display-path");
+      const expected = el.getAttribute("cf-display-compare");
+
+      if (!key || !path) return;
+      if (expected === null) {
+        console.warn("⚠️ Falta el atributo cf-display-compare en:", el);
+      }
+
+      // Obtener datos desde localStorage
+      let data = localStorage.getItem(key);
+      try {
+        data = JSON.parse(data);
+      } catch {
+        data = null;
+      }
+
+      // Obtener valor desde el path
+      const actualValue = path.split('.').reduce(
+        (obj, prop) => (obj && obj[prop] !== undefined) ? obj[prop] : null,
+        data
+      );
+
+      // Evaluación del display
+      let shouldDisplay = false;
+      if (expected === "null") {
+        shouldDisplay = actualValue == null;
+      } else if (expected === "!null") {
+        shouldDisplay = actualValue != null;
+      } else {
+        shouldDisplay = String(actualValue) === expected;
+      }
+
+      el.style.display = shouldDisplay ? "" : "none";
+    });
+
+    // Emitir eventos de finalización
+    document.dispatchEvent(new CustomEvent("cf-display-ready"));
+      }
+</script>   
+
+
+
+
+<!-- 🧱 cf-options-builder (versión robusta con soporte para parent-child y compatible con cf-form-submit) -->
+ <script>
+  document.addEventListener("cf-options-ready", buildOptionGroups);
+  document.addEventListener("cf-build-options-trigger", buildOptionGroups);
+
+  function buildOptionGroups() {
+    const containers = document.querySelectorAll("[cf-options-build]");
+
+    containers.forEach(container => {
+      const componentId = container.getAttribute("cf-options-build");
+      const inputType = container.getAttribute("cf-options-type") || "checkbox";
+      const key = container.getAttribute("cf-options-key");
+      const path = `${container.getAttribute("cf-options-path")}.options`;
+      const activeClass = container.getAttribute("cf-options-active") || "is-active-inputactive";
+      const limit = container.getAttribute("cf-checkbox-limit");
+      const cfRequired = container.getAttribute("cf-required");
+      const requiredPath = `${key}.${container.getAttribute("cf-options-path")}.message`;
+        let cfMessage = "";
+
+        if (requiredPath) {
+        const [lsKey, ...pathParts] = requiredPath.split(".");
+        if (lsKey && pathParts.length > 0) {
+        try {
+        const stored = JSON.parse(localStorage.getItem(lsKey));
+        cfMessage = pathParts.reduce((acc, part) => acc && acc[part], stored) || "Select one option";
+        } catch {
+        cfMessage = "Select one option";
+        }
+        } else {
+        cfMessage = "Select an option";
+        }
+        }
+
+
+      const isParent = container.hasAttribute("cf-options-parent");
+      const isChild = container.hasAttribute("cf-options-child");
+      const childGroupName = container.getAttribute("cf-options-child") || "";
+      const targetValue = container.getAttribute("cf-options-target") || "";
+
+      const valueField = "value";
+      const labelField = "label";
+
+      const template = document.querySelector(`[data-options-component="${componentId}"]`);
+      if (!template) {
+        console.error(`❌ No se encontró template data-options-component="${componentId}"`);
+        return;
+      }
+
+      const baseGroup = template.querySelector("[data-options-group]");
+      const fieldTemplate = template.querySelector("[data-options-field]");
+
+      if (!baseGroup || !fieldTemplate) {
+        console.error("❌ La plantilla necesita [data-options-group] y [data-options-field]");
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(localStorage.getItem(key));
+      } catch {
+        console.warn(`⚠️ localStorage["${key}"] inválido.`);
+        return;
+      }
+
+      const list = path.split('.').reduce((acc, prop) => acc && acc[prop], data);
+      if (!Array.isArray(list) || list.length === 0) {
+        console.warn(`⚠️ Lista no encontrada en ${key} → ${path}`);
+        return;
+      }
+
+      const groupClone = baseGroup.cloneNode(false);
+      groupClone.setAttribute("data-options-group", "");
+
+      // 🎯 Asignar target para vincular con value de parent
+      if (targetValue) {
+        container.setAttribute("cf-options-target", targetValue);
+      }
+
+      // 🔒 Crear input hidden para guardar datos
+      const hiddenInput = document.createElement("input");
+      hiddenInput.type = "hidden";
+      hiddenInput.setAttribute("cf-json-path", path);
+      hiddenInput.setAttribute("name", path);
+      hiddenInput.setAttribute("data-required-message", cfMessage);
+      
+      if (inputType === "checkbox" && limit && limit !== "") {
+      hiddenInput.setAttribute("cf-checkbox-limit", limit);
+      }
+
+      if (isChild) {
+        // Añadir atributos para ser detectado por cf-form-submit como campo obligatorio condicional
+      hiddenInput.setAttribute("cf-options-display-input", childGroupName);
+      }
+
+      if (isParent && cfRequired === "true") {
+      hiddenInput.setAttribute("data-required", "");  // <-- Corregido: añadido el valor vacío
+      }
+
+      if (inputType === "checkbox") {
+      hiddenInput.value = "[]";  // Array para selección múltiple
+      } else if (inputType === "radio") {
+      hiddenInput.value = "";    // String único para selección simple
+      }
+
+
+
+
+
+      groupClone.appendChild(hiddenInput);
+
+      list.forEach(item => {
+        const field = fieldTemplate.cloneNode(true);
+        field.classList.remove(activeClass);
+
+        const input = field.querySelector("[data-options-button]");
+        const label = field.querySelector("[data-options-label]");
+
+        if (!input || !label) return;
+
+        input.type = inputType;
+        input.setAttribute("cf-options-value", item[valueField]);
+        input.setAttribute("cf-options-label", item[labelField]);
+        input.setAttribute("cf-options-path", path);
+        input.setAttribute("cf-options-active", activeClass);
+        input.setAttribute("name", inputType === "radio" ? path : "");
+
+        if (isParent) {
+          input.setAttribute("cf-options-parent", container.getAttribute("cf-options-parent"));
+        }
+
+      
+        label.textContent = item[labelField];
+        groupClone.appendChild(field);
+      });
+
+      container.appendChild(groupClone);
+    });
+
+    // 🔒 Ocultar plantillas originales
+    document.querySelectorAll("[data-options-component]").forEach(el => {
+      el.style.display = "none";
+    });
+
+
+    
+    document.dispatchEvent(new Event("cf-fill-options-ready"));
+  }
+</script>
+
+
+<!-- 🎯 cf-options-handler actualizado (radio como valor simple) -->
+<script>
+document.addEventListener("cf-fill-options-ready", () => {
+  document.querySelectorAll("[cf-options-value]").forEach(input => {
+    input.addEventListener("change", () => {
+      const value = input.getAttribute("cf-options-value");
+      const label = input.getAttribute("cf-options-label");
+      const path = input.getAttribute("cf-options-path");
+      const type = input.type;
+      const field = input.closest("[data-options-field]");
+      const group = input.closest("[data-options-group]");
+      const activeClass = input.getAttribute("cf-options-active");
+
+      if (!path || !group) return;
+
+      const hidden = group.querySelector(`input[type="hidden"][cf-json-path="${path}"]`);
+      if (!hidden) {
+        console.error(`No input hidden con cf-json-path="${path}"`, group);
+        return;
+      }
+
+      // MODIFICACIÓN PRINCIPAL: Manejo diferenciado inicial
+      let currentValue;
+      if (type === "checkbox") {
+        try { currentValue = JSON.parse(hidden.value || "[]"); }
+        catch { currentValue = []; console.warn("Error parseando JSON:", hidden.value); }
+      } else if (type === "radio") {
+        try { currentValue = hidden.value ? JSON.parse(hidden.value) : null; }
+        catch { currentValue = null; }
+      }
+
+      const entry = { value, label };
+
+      if (type === "checkbox") {
+        const isActive = input.checked;
+        const exists = currentValue.some(item => item.value === value);
+
+        // Validación de límite (sólo para checkboxes)
+        if (isActive && !exists) {
+          const limit = hidden.hasAttribute("cf-checkbox-limit") 
+                      ? parseInt(hidden.getAttribute("cf-checkbox-limit"))
+                      : null;
+          
+          if (limit !== null && currentValue.length >= limit) {
+            showErrorModal(`Selecciona máximo ${limit} opciones.`);
+            input.checked = false;
+            return;
+          }
+        }
+
+        field?.classList.toggle(activeClass, isActive);
+        
+        if (isActive && !exists) {
+          currentValue.push(entry);
+        } else if (!isActive && exists) {
+          currentValue = currentValue.filter(item => item.value !== value);
+        }
+
+      } else if (type === "radio") {
+        // MODIFICACIÓN: Radio ahora maneja objeto simple (no array)
+        group.querySelectorAll(`[type="radio"][cf-options-path="${path}"]`)
+             .forEach(r => r.closest("[data-options-field]")?.classList.remove(activeClass));
+        field?.classList.add(activeClass);
+        currentValue = entry; // Asignación directa del objeto (no array)
+      }
+
+      // MODIFICACIÓN: Serialización diferenciada
+      hidden.value = type === "checkbox" ? JSON.stringify(currentValue) 
+                   : currentValue ? JSON.stringify(currentValue) : "";
+
+      // Evento personalizado (sin cambios)
+      document.dispatchEvent(new CustomEvent(`valid-change-${type}`, {
+        detail: {
+          input,
+          value,
+          label,
+          path,
+          type,
+          isChecked: input.checked
+        }
+      }));
+    });
+  });
+});
+</script>
+
+
+<!-- 🧩 cf-options-display (checkbox) - Versión optimizada -->
+<script>
+  // Escuchamos directamente el evento valid-change-checkbox
+  document.addEventListener("valid-change-checkbox", (e) => {
+    const { input, value, path, isChecked } = e.detail;
+    const parent = input.closest('[cf-options-parent]')?.getAttribute("cf-options-parent");
+    
+    if (!value || !parent) return;
+
+    // Manejo de divs de display
+    document.querySelectorAll(`[cf-options-display-div="${parent}"][cf-options-match="${value}"]`).forEach(div => {
+      const target = div.querySelector(`[cf-options-child="${parent}"][cf-options-target="${value}"]`);
+      if (!target) return;
+
+      div.style.display = isChecked ? "block" : "none";
+      console.log(`🔄 ${value}: ${isChecked ? '🙉' : '🙈'}`);
+    });
+
+    // Manejo de grupos hijos y required
+    document.querySelectorAll(`[cf-options-child="${parent}"][cf-options-target="${value}"]`).forEach(child => {
+      const hiddenInput = child.querySelector('input[cf-json-path]');
+
+      if (hiddenInput) {
+        if (isChecked) {
+          hiddenInput.setAttribute("data-required", "");
+          
+        } else {
+          hiddenInput.removeAttribute("data-required");
+          
+        }
+      }
+    });
+
+    // Actualización de formulario
+    if (input) {
+      const parentForm = input.closest('[cf-form-submit]');
+      const formIdentifier = parentForm?.getAttribute('cf-form-submit');
+
+      if (formIdentifier) {
+        console.log(`🔄 Form: ${formIdentifier}`);
+        document.dispatchEvent(new CustomEvent('cf-update-form', {
+          detail: { formIdentifier }
+        }));
+      }
+    }
+  });
+</script>
+
+<!-- 🧩 cf-options-display (radio) - Versión actualizada para valid-change-radio -->
+<script>
+  document.addEventListener("valid-change-radio", (e) => {
+    const { input, value, isChecked } = e.detail;
+    const parent = input.closest('[cf-options-parent]')?.getAttribute("cf-options-parent");
+    
+    if (!value || !parent) return;
+
+    // 🔁 Mostrar/Ocultar divs relacionados (misma lógica original)
+    document.querySelectorAll(`[cf-options-display-div="${parent}"]`).forEach(div => {
+      const match = div.getAttribute("cf-options-match");
+      const shouldShow = match === value;
+      div.style.display = shouldShow ? "block" : "none";
+    });
+
+    // ✅ Activar o desactivar campos hijos (misma lógica original)
+    document.querySelectorAll(`[cf-options-child="${parent}"]`).forEach(child => {
+      const target = child.getAttribute("cf-options-target");
+      const hiddenInput = child.querySelector('input[cf-json-path]');
+
+      const isTargetMatch = target === value;
+
+      if (hiddenInput) {
+        if (isTargetMatch && isChecked) {
+          hiddenInput.setAttribute("data-required", "");
+        } else {
+          hiddenInput.removeAttribute("data-required");
+        }
+      }
+    });
+
+    // 🎯 Disparar actualización del formulario (misma lógica original)
+    const parentForm = input.closest('[cf-form-submit]');
+    const formIdentifier = parentForm?.getAttribute('cf-form-submit');
+
+    if (formIdentifier) {
+      document.dispatchEvent(new CustomEvent('cf-update-form', {
+        detail: { formIdentifier }
+      }));
+    }
+  });
+</script>
+
+
+
+
+<!-- 🧱 cf-keywords-builder -->
+<script>
+document.addEventListener("creatifornia-ready", buildKeywords);
+document.addEventListener("cf-build-keywords-trigger", buildKeywords);
+
+function buildKeywords() {
+    const containers = document.querySelectorAll("[cf-keywords-build]");
+
+    containers.forEach(container => {
+        const componentId = container.getAttribute("cf-keywords-build");
+        const formPath = container.getAttribute("form-path");
+        const keywordsLimit = container.getAttribute("keywords-limit");
+        const maxLength = container.getAttribute("maxlength") || "256";
+
+        const template = document.getElementById(componentId);
+        if (!template) {
+            console.error(`❌ No se encontró template con id="${componentId}"`);
+            return;
+        }
+
+        // Clonar el template conservando todas las clases y estructura
+        const clone = template.cloneNode(true);
+        clone.removeAttribute("id");
+        container.appendChild(clone);
+
+        // Obtener elementos del clon
+        const wordsGroup = clone.querySelector("[words-group]");
+        const wordButtonTemplate = clone.querySelector("[word-button]");
+        const textFieldContainer = clone.querySelector("[text-field-container]");
+        const input = textFieldContainer.querySelector("[keywords-input]");
+        const addButton = textFieldContainer.querySelector("[add-button]");
+
+        // MODIFICACIÓN: Eliminar el ejemplo del template clonado
+        wordsGroup.innerHTML = "";
+
+        // Configurar input
+        input.setAttribute("maxlength", maxLength);
+
+        // Crear input hidden para almacenar las palabras
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.setAttribute("cf-json-path", formPath);
+        hiddenInput.setAttribute("name", formPath);
+        hiddenInput.value = "[]";
+        container.insertBefore(hiddenInput, clone);
+
+        // Estado inicial - array vacío
+        let keywords = [];
+
+        // Función para actualizar el input hidden y la vista
+        const updateKeywords = () => {
+            hiddenInput.value = JSON.stringify(keywords);
+            
+            // Actualizar vista
+            wordsGroup.innerHTML = "";
+            keywords.forEach((keyword, index) => {
+                const keywordElement = wordButtonTemplate.cloneNode(true);
+                keywordElement.querySelector("[generated-keyword]").textContent = keyword;
+                
+                // Configurar botón de eliminación
+                const deleteBtn = keywordElement.querySelector("[delete-icon]");
+                deleteBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    keywords = keywords.filter((_, i) => i !== index);
+                    updateKeywords();
+                });
+                
+                wordsGroup.appendChild(keywordElement);
+            });
+        };
+
+        // Función para agregar nueva palabra
+        const addKeyword = () => {
+            const newKeyword = input.value.trim();
+            
+            if (!newKeyword) return;
+            
+            // Validar límite de palabras
+            if (keywordsLimit && keywords.length >= parseInt(keywordsLimit)) {
+                alert(`Máximo ${keywordsLimit} palabras permitidas`);
+                return;
+            }
+            
+            // Validar duplicados
+            if (keywords.includes(newKeyword)) {
+                alert("Esta palabra ya fue agregada");
+                return;
+            }
+            
+            keywords.push(newKeyword);
+            input.value = "";
+            updateKeywords();
+        };
+
+        // Event listeners
+        addButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            addKeyword();
+        });
+        
+        input.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addKeyword();
+            }
+        });
+
+        // Ocultar template original
+        template.style.display = "none";
+        
+        // Inicializar con vista vacía
+        updateKeywords();
+    });
+
+    document.dispatchEvent(new Event("cf-keywords-setup-complete"));
+}
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 🦜 cf-events-manager  (#1 cf-inputs-ready)🦜 -->
+<script>
+  (function() {
+    const REQUIRED_EVENTS = [
+      "cf-fill-inputs-ready",
+      "cf-fill-options-ready",
+                     ];
+
+    let receivedEvents = new Set();
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        console.log("✅ Events ready: (inputs)");
+        document.dispatchEvent(new Event("cf-inputs-ready"));
+        resetCoordinator(); // ⬅️ Reinicio automático justo después
+      }
+    }
+
+    function resetCoordinator() {
+      receivedEvents.clear();
+    }
+
+    // Escucha todos los eventos requeridos
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          console.log(`📥 Event (inputs): ${eventName}`);
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script>
+
+<!-- 🦜 cf-form-submit (versión modular optimizada) -->
+<script>
+  function initializeFormHandler(form) {
+    const formId = form.getAttribute('cf-form-submit') || 'unnamed_form';
+    const endpoint = form.getAttribute('cf-endpoint') || '/default_endpoint';
+    const verb = (form.getAttribute('cf-verb') || 'patch').toLowerCase();
+    const MAX_ATTEMPTS = 8;
+    const RETRY_DELAY = 22000;
+
+    if (form._submitHandler) {
+      form.removeEventListener("submit", form._submitHandler);
+    }
+
+    const submitHandler = async (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      const customRequiredFields = form.querySelectorAll('[data-required]');
+      let customValid = true;
+
+      customRequiredFields.forEach(field => {
+        const rawValue = field.value;
+        let isEmpty = false;
+        
+        // 1. Verificar si el valor es un array vacío
+        if (rawValue === '[]' || rawValue === '{}') {
+          isEmpty = true;
+        } 
+        // 2. Verificar si el valor es un array vacío en formato JSON
+        else {
+          try {
+            const parsed = JSON.parse(rawValue);
+            if (Array.isArray(parsed) && parsed.length === 0) {
+              isEmpty = true;
+            } else if (typeof parsed === 'object' && Object.keys(parsed).length === 0) {
+              isEmpty = true;
+            }
+          } catch (e) {
+            // No es JSON, continuar con validación normal
+          }
+        }
+        
+        // 3. Verificación estándar para strings vacíos
+        if (!isEmpty) {
+          const value = rawValue?.trim();
+          isEmpty = !value;
+        }
+
+        if (isEmpty) {
+          const message = field.getAttribute('data-required-message') || 'Required*';
+          showErrorModal(message);
+          customValid = false;
+        }
+      });
+
+      if (!customValid) {
+        form.removeAttribute('data-submitting');
+        return;
+      }
+
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        form.removeAttribute('data-submitting');
+        return;
+      }
+
+      if (form.hasAttribute('data-submitting')) {
+        console.warn("⏸️ Formulario ya en proceso de envío");
+        return;
+      }
+      form.setAttribute('data-submitting', 'true');
+
+      const authToken = localStorage.getItem("AuthToken");
+      if (!authToken || typeof xano === 'undefined') {
+        console.error("❌ No AuthToken or Xano instance found");
+        form.removeAttribute('data-submitting');
+        return;
+      }
+
+      xano.setAuthToken(authToken);
+
+      const fields = form.querySelectorAll('[cf-json-path]');
+      const data = { form_id: formId };
+
+      fields.forEach(field => {
+        const path = field.getAttribute('cf-json-path');
+        if (!path) return;
+
+        let value;
+        const directInputValue = field.getAttribute('cf-direct-input');
+
+        if (directInputValue !== null) {
+          value = directInputValue;
+        } else if (field.type === 'checkbox') {
+          value = field.checked;
+        } else if (field.type === 'radio') {
+          if (!field.checked) return;
+          value = field.value;
+        } else if (field.tagName === 'SELECT' && field.multiple) {
+          value = Array.from(field.selectedOptions).map(opt => opt.value);
+        } else {
+          value = field.value;
+        }
+
+        const keys = path.split('.');
+        let current = data;
+        keys.forEach((key, index) => {
+          if (index === keys.length - 1) {
+            current[key] = value;
+          } else {
+            if (!current[key]) current[key] = {};
+            current = current[key];
+          }
+        });
+
+        const lsKey = field.getAttribute('update-local-storage-key');
+        const lsPath = field.getAttribute('update-local-storage-path');
+
+        if (lsKey && lsPath) {
+          let stored = {};
+          try {
+            stored = JSON.parse(localStorage.getItem(lsKey)) || {};
+          } catch {
+            console.warn(`⚠️ No se pudo parsear localStorage["${lsKey}"], se usará objeto vacío`);
+          }
+
+          const pathKeys = lsPath.split('.');
+          let cursor = stored;
+          pathKeys.forEach((k, i) => {
+            if (i === pathKeys.length - 1) {
+              cursor[k] = value;
+            } else {
+              if (!cursor[k] || typeof cursor[k] !== 'object') cursor[k] = {};
+              cursor = cursor[k];
+            }
+          });
+
+          localStorage.setItem(lsKey, JSON.stringify(stored));
+          console.log(`💾 LocalStorage actualizado "${lsKey}" →`, stored);
+        }
+      });
+
+      const submitWithRetry = async (attempt = 1) => {
+        try {
+          console.log(`📤 Envío intento #${attempt} a ${endpoint}`, data);
+          if (typeof xano[verb] !== 'function') throw new Error(`❌ HTTP verb not supported: ${verb}`);
+
+          const response = await xano[verb](endpoint, data);
+          console.log("🦜 Response:", response);
+
+          if (localStorage.getItem("uploadcare")) {
+            localStorage.removeItem("uploadcare");
+            console.log("🧹 Uploadcare removed");
+          }
+
+          if (response?.body?.event) {
+            document.dispatchEvent(new CustomEvent(response.body.event, {
+              detail: response.body.data || {},
+              bubbles: true
+            }));
+          }
+
+          if (response?.body?.redirect_url) {
+            window.location.href = response.body.redirect_url;
+            return;
+          }
+
+          if (response?.body?.error) {
+            showErrorModal(response.body.error);
+            return;
+          }
+
+          if (response?.body === "retry") {
+            console.warn("⏳ Respuesta 'retry' recibida. Reintentando en 22 segundos...");
+            if (attempt < MAX_ATTEMPTS) {
+              setTimeout(() => submitWithRetry(attempt + 1), RETRY_DELAY);
+            } else {
+              showErrorModal("Demasiados intentos. Intenta más tarde.");
+            }
+            return;
+          }
+
+          console.log("✅ Submit");
+        } catch (error) {
+          console.error(`❌ Error en envío a ${endpoint}:`, error);
+          showErrorModal("Error al enviar. Intenta más tarde.");
+        } finally {
+          form.removeAttribute('data-submitting');
+        }
+      };
+
+      submitWithRetry();
+    };
+
+    form._submitHandler = submitHandler;
+    form.addEventListener("submit", submitHandler);
+  }
+
+  // 📦 Inicialización para todos los formularios
+  document.addEventListener("cf-inputs-ready", () => {
+    document.querySelectorAll('[cf-form-submit]').forEach(initializeFormHandler);
+    document.dispatchEvent(new Event("cf-submit-ready"));
+  });
+
+  // 📦 Actualización puntual de formulario
+  document.addEventListener("cf-update-form", (e) => {
+    const formId = e.detail?.formIdentifier;
+    if (!formId) {
+      console.error("❌ cf-update-form recibido sin formIdentifier");
+      return;
+    }
+    const form = document.querySelector(`[cf-form-submit="${formId}"]`);
+    if (form) initializeFormHandler(form);
+    console.log("✅ Form updated");
+  });
+
+  // 🧯 Modal de error
+  function showErrorModal(message) {
+    const modal = document.getElementById('error-modal');
+    const messageElement = document.getElementById('error-message');
+    if (modal && messageElement) {
+      messageElement.innerText = message;
+      modal.style.display = 'flex';
+    } else {
+      console.error("❌ Elementos del modal no encontrados");
+    }
+  }
+
+  function closeErrorModal() {
+    const modal = document.getElementById('error-modal');
+    if (modal) modal.style.display = 'none';
+  }
+</script>
+
+
+
+<!-- 🦜 cf-events-manager  (cf-loader-off)🦜 -->
+<script>
+  (function() {
+    const REQUIRED_EVENTS = [
+      "cf-display-ready",
+      "cf-submit-ready",
+      "cf-text-ready",
+                ];
+
+    let receivedEvents = new Set();
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        console.log("✅ Events ready (loader)");
+        document.dispatchEvent(new Event("cf-loader-off"));
+        resetCoordinator(); // ⬅️ Reinicio automático justo después
+      }
+    }
+
+    
+
+    function resetCoordinator() {
+      receivedEvents.clear();
+    }
+
+    // Escucha todos los eventos requeridos
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          console.log(`📥 Event (loader): ${eventName}`);
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 💙 MEMBERSCRIPT #77 v0.1 💙 UNIVERSAL EMOJIS -->
+<script>
+document.querySelectorAll('[ms-code-emoji]').forEach(element => {
+  var imageUrl = element.getAttribute('ms-code-emoji');
+  var img = document.createElement('img');
+  img.src = imageUrl;
+
+  var textStyle = window.getComputedStyle(element);
+  var adjustedHeight = parseFloat(textStyle.fontSize) * 1.0;
+
+  img.style.height = adjustedHeight + 'px';
+  img.style.width = 'auto';
+  img.style.verticalAlign = 'text-top';
+
+  element.innerHTML = ''; // Clears the text content inside the span
+  element.appendChild(img);
+});
+</script>
+
+<!-- 💙 MEMBERSCRIPT #7 v0.2 💙 DELAY LOADING ELEMENTS + AUTO CLICK -->
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const elementsToDelay = document.querySelectorAll('[ms-code-delay]');
+    const openTrigger = document.getElementById("open");
+
+    elementsToDelay.forEach(element => {
+      element.style.visibility = "hidden"; // Ocultar inicialmente
+    });
+
+    setTimeout(function() {
+      let animationsCompleted = 0;
+
+      elementsToDelay.forEach(element => {
+        element.style.visibility = "visible";
+        element.style.opacity = "0";
+        element.style.animation = "fadeIn 0.5s";
+
+        element.addEventListener("animationend", function handler() {
+          element.style.opacity = "1";
+          element.removeEventListener("animationend", handler); // Evita duplicados
+
+          animationsCompleted++;
+          // Cuando todas las animaciones hayan terminado
+          if (animationsCompleted === elementsToDelay.length && openTrigger) {
+            console.log("🎯 Todas las animaciones completadas. Haciendo clic en #open...");
+            openTrigger.click();
+          }
+        });
+      });
+    }, 1500);
+  });
+</script>
+
+<style>
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+</style>
+
+
+      
+<!-- /////////🌴refresh🌴///////// -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const alreadyRefreshed = sessionStorage.getItem("cf-refreshed");
+
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+
+  const hasRefreshParam = params.has("refresh");
+  const hasForceParam = params.has("force");
+
+  // ✅ Forzar refresh si "force" está presente, ignorando el flag de sessionStorage
+  if ((hasRefreshParam && !alreadyRefreshed) || hasForceParam) {
+    sessionStorage.setItem("cf-refreshed", "true");
+    console.log("🔁 Refresh.");
+
+    // Elimina los parámetros "refresh" y "force" de la URL
+    params.delete("refresh");
+    params.delete("force");
+
+    // Reconstruye la URL con los parámetros restantes
+    const newUrl = url.pathname + (params.toString() ? '?' + params.toString() : '') + url.hash;
+
+    setTimeout(() => {
+      window.location.href = newUrl;
+    }, 500);
+  }
+});
+</script>
+
+       
+
+
+
+       
+       
+       
+       
+       <!-- /////////🌴STARTER🌴///////// -->
+      
+      <script>
+        (function() {
+          const params = new URLSearchParams(window.location.search);
+          const plan = params.get("plan");
+      
+          if (plan === "starter") {
+            // 👇 Tus scripts van aquí 👇
+      
+           //🦜 CREATFORNIA GET countries (public) v1  🦜 //
+      
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/countries').then((response) => {
+                if (response?.body?.countries) {
+                  localStorage.setItem("countriesJSON", JSON.stringify(response.body));
+                  console.log("✅ Countries");
+                  document.dispatchEvent(new CustomEvent("cf-countries-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /countries no contenía la propiedad 'countries' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /countries de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /countries.");
+            }
+          });
+        
+        
+          
+        
+        //🦜 CREATFORNIA SELECT COUNTRIES v1 🦜 select-from-json="countries //
+      
+          async function fillCountriesSelects() {
+            const jsonString = localStorage.getItem("countriesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const countries = data.countries;
+        
+            const selects = document.querySelectorAll('[select-from-json="countries"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Your country';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // 🗺️ Agrega países
+              countries.forEach(countries => {
+                const option = document.createElement('option');
+                option.value = countries.id;
+                option.textContent = countries.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select ready: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+                    document.addEventListener("cf-countries-ready", fillCountriesSelects);
+      
+        
+         
+        
+        
+        //<!-- 🦜 CREATFORNIA GET profiles v1 (public)🦜 -->//
+        
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/profiles').then((response) => {
+                if (response?.body?.profiles) {
+                  localStorage.setItem("profilesJSON", JSON.stringify(response.body));
+                  console.log("✅ Profiles");
+                  document.dispatchEvent(new CustomEvent("cf-profiles-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /profiles no contenía la propiedad 'profiles' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /profiles de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /profiles.");
+            }
+          });
+      
+        
+        
+          
+        
+        //<!-- 💙 🦜 CREATFORNIA SELECT PROFILES v1 🦜 select-from-json="profiles -->//
+      
+          async function fillProfilesSelects() {
+            const jsonString = localStorage.getItem("profilesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const profiles = data.profiles;
+        
+            const selects = document.querySelectorAll('[select-from-json="profiles"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Describe yourself';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // Agrega profiles
+              profiles.forEach(profiles => {
+                const option = document.createElement('option');
+                option.value = profiles.id;
+                option.textContent = profiles.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select ready: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+               document.addEventListener("cf-profiles-ready", fillProfilesSelects);
+      
+      
+            // 👆 Fin de tus scripts 👆
+          } else {
+            
+          }
+        })();
+      </script>
+       
+       
+       
+       
+       
+       
+ <!-- /////////🌴Printify🌴///////// -->
+<!--  🦜 cf-printify-accepted 🦜 -->
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    // Obtener los parámetros "code" y "state" de la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+
+    // Si no hay code, no hacemos nada
+    if (!code) return;
+
+    // Prevenir múltiples envíos
+    if (sessionStorage.getItem("printify_code_sent")) return;
+
+    const endpoint = "/oauth_states/accepted_0";
+    const verb = "post";
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (!authToken || typeof xano === 'undefined') {
+      console.error("❌ No AuthToken or Xano instance found");
+      return;
+    }
+
+    xano.setAuthToken(authToken);
+
+    try {
+      if (typeof xano[verb] !== 'function') {
+        throw new Error(`❌ HTTP verb not supported: ${verb}`);
+      }
+
+      const payload = { code, state };
+      const response = await xano[verb](endpoint, payload);
+
+      console.log(`✅ ${verb.toUpperCase()} to ${endpoint}`);
+      console.log("📦 Printify-accepted Response:", response);
+
+      // Manejo de redirección si viene en la respuesta
+      if (response.body?.redirect_url) {
+        console.log("🔀 Redirecting a:", response.body.redirect_url);
+        window.location.href = response.body.redirect_url;
+        return;
+      }
+
+      // Marcar como enviado
+      sessionStorage.setItem("printify_code_sent", "true");
+
+    } catch (error) {
+      console.error("❌ Error al enviar código a Xano:", error);
+    }
+  });
+</script>
+
+            
+        
+      
+      
+      
+ 
+      
+      
+
+      
+      
+        <!-- /////////🌴FUNCIONALITIES 🌴///////// -->
+
+   
+
+
+      <!-- 🦜 cf-mirror-click 🦜 -->
+      <script>
+          // Encuentra todos los elementos con el atributo cf-click-trigger
+          const clickTriggers = document.querySelectorAll('[cf-click-trigger]');
+        
+          clickTriggers.forEach(trigger => {
+            const id = trigger.getAttribute('cf-click-trigger');
+        
+            trigger.addEventListener('click', () => {
+              const target = document.querySelector(`[cf-click-target="${id}"]`);
+              if (!target) {
+                console.warn(`No element found with cf-click-target="${id}"`);
+                return;
+              }
+        
+              target.click(); // Ejecuta el clic en el elemento objetivo
+            });
+          });
+        </script>
+        
+<script>
+  document.addEventListener("cf-fill-specific-inputs", (e) => {
+    const { key, path, formIdentifier } = e.detail || {};
+    
+    // Verificación temprana de formIdentifier
+    if (!formIdentifier) {
+      console.warn("⚠️ Evento recibido sin formIdentifier");
+      return;
+    }
+    
+    // Verificación de parámetros esenciales
+    if (!key || !path) {
+      console.error("❌ Evento requiere key y path");
+      return;
+    }
+
+    const selector = `[cf-local-storage-key="${key}"][cf-local-storage-path="${path}"]`;
+    const matchingInputs = document.querySelectorAll(selector);
+
+    if (matchingInputs.length === 0) {
+      console.warn(`⚠️ No inputs encontrados para key="${key}" y path="${path}"`);
+      return;
+    }
+
+    let storedData;
+    try {
+      storedData = JSON.parse(localStorage.getItem(key));
+    } catch {
+      storedData = null;
+    }
+
+    const value = path.split('.').reduce((acc, part) => 
+      (acc && acc[part] !== undefined) ? acc[part] : null, storedData);
+
+    matchingInputs.forEach(input => {
+      if (value === null) {
+        if (input.type === 'checkbox' || input.type === 'radio') {
+          input.checked = false;
+        } else {
+          input.value = '';
+        }
+        return;
+      }
+
+      if (input.type === 'checkbox') {
+        input.checked = Boolean(value);
+      } else if (input.type === 'radio') {
+        if (input.value === value.toString()) input.checked = true;
+      } else if (input.tagName === 'SELECT' && input.multiple && Array.isArray(value)) {
+        Array.from(input.options).forEach(opt => {
+          opt.selected = value.includes(opt.value);
+        });
+      } else {
+        input.value = value;
+      }
+
+      if (!input.placeholder && typeof value === 'string') {
+        input.placeholder = value;
+      }
+    });
+
+    // 🔁 Disparar cf-update-form SIN CONDICIONAMIENTO
+    document.dispatchEvent(new CustomEvent("cf-update-form", {
+      detail: { formIdentifier }
+    }));
+  });
+</script>
+        
+         <!-- /////////🌴UPLOADCARE 🌴///////// -->       
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
+
+<script type="module">
+  import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
+  import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
+
+  // Define el locale español
+  UC.defineLocale('es', es);
+
+  // Define los componentes después de definir el locale
+  UC.defineComponents(UC);
+</script>
+
+
+
+
+
+
+
+
+
+<!-- 🦜 MODAL response error  🦜 -->
+
+<div id="error-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+    <div style="background:#292626; padding:2rem; border-radius:1rem; max-width:400px; width:90%; text-align:center; color:#e7cfb1; font-family:sans-serif; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+      <h2 style="margin-bottom:1rem; font-size:18px;">🔔</h2> <!-- Título más pequeño -->
+      <p id="error-message" style="margin-bottom:2rem; font-size:20px; font-weight:bold;"></p> <!-- Mensaje más grande -->
+      <button onclick="closeErrorModal()" style="background:#e5813e; color:#292626; border:none; padding:0.75rem 1.5rem; border-radius:0.5rem; cursor:pointer; font-weight:bold;">
+        Close
+      </button>
+    </div>
+  </div>
+
+
+
+
+
+

@@ -1,0 +1,172 @@
+<!-- 🦜 cf-fill-select (es) 🦜 -->
+<script type="text/javascript">
+  document.addEventListener("cf-options-ready", fillSelectsFromLocalStorage);
+  document.addEventListener("cf-fill-select-trigger", fillSelectsFromLocalStorage);
+
+  function fillSelectsFromLocalStorage() {
+    const selects = document.querySelectorAll('select[cf-fill-select-key]');
+    let processed = 0;
+    const total = selects.length;
+
+    if (total === 0) {
+      dispatchSelectsReady();
+      return;
+    }
+
+    selects.forEach(select => {
+      const key = select.getAttribute('cf-fill-select-key');
+      const path = select.getAttribute('cf-fill-select-path');
+      const lang = select.getAttribute('cf-select-lang') || 'es';
+      const valueField = `${lang}_value`;
+      const labelField = `${lang}_label`;
+
+      if (!key || !path) {
+        checkOneProcessed();
+        return;
+      }
+
+      let stored = localStorage.getItem(key);
+      try {
+        stored = JSON.parse(stored);
+      } catch {
+        stored = null;
+      }
+
+      const list = path.split('.').reduce((obj, prop) => (obj && obj[prop] !== undefined) ? obj[prop] : null, stored);
+
+      if (!Array.isArray(list) || list.length === 0) {
+        console.warn(`⚠️ Lista vacía o no válida para select [${key} → ${path}]`);
+        checkOneProcessed();
+        return;
+      }
+
+      // Limpiar opciones existentes
+      select.innerHTML = "";
+
+      // Agregar placeholder (primer elemento)
+      const firstItem = list[0];
+      const placeholderOption = document.createElement("option");
+      placeholderOption.textContent = firstItem[labelField];
+      placeholderOption.disabled = true;
+      placeholderOption.selected = !select.hasAttribute("multiple");
+      placeholderOption.value = "";
+      placeholderOption.setAttribute("cf-option-label", firstItem[labelField]);
+      select.appendChild(placeholderOption);
+
+      // Agregar opciones reales
+      list.slice(1).forEach(item => {
+        const option = document.createElement("option");
+        option.value = item[valueField];
+        option.textContent = item[labelField];
+        option.setAttribute("cf-option-label", item[labelField]); // 🆕 Atributo adicional
+        select.appendChild(option);
+      });
+
+      checkOneProcessed();
+    });
+
+    function checkOneProcessed() {
+      processed++;
+      if (processed === total) {
+        requestAnimationFrame(() => {
+          document.dispatchEvent(new Event("cf-fill-select-ready"));
+        });
+      }
+    }
+
+    function dispatchSelectsReady() {
+      document.dispatchEvent(new Event("cf-fill-select-ready"));
+    }
+  }
+</script>
+
+
+
+<!-- 🦜 cf-select-display 🦜 -->
+<script>
+  document.addEventListener("cf-fill-select-ready", () => {
+    document.querySelectorAll('select[cf-select-display]').forEach(select => {
+      const identifier = select.getAttribute("cf-select-display");
+
+      select.addEventListener("change", () => {
+        const selectedValue = select.value;
+
+        document.dispatchEvent(new CustomEvent("select-change", {
+          detail: {
+            identifier,
+            value: selectedValue
+          }
+        }));
+      });
+    });
+  });
+
+  document.addEventListener("select-change", (e) => {
+    const { identifier, value } = e.detail;
+    if (!identifier || !value) return;
+
+    // Divs relacionados
+    const allDivs = document.querySelectorAll(`[cf-select-display-div="${identifier}"]`);
+    allDivs.forEach(div => {
+      div.style.display = (div.id === value) ? "block" : "none";
+    });
+
+    // Inputs relacionados
+    const allInputs = document.querySelectorAll(`[cf-select-display-input="${identifier}"]`);
+    allInputs.forEach(input => {
+      if (input.id === value) input.setAttribute("required", "");
+      else input.removeAttribute("required");
+    });
+
+    // Obtener el formulario relacionado
+    const triggeringSelect = document.querySelector(`select[cf-select-display="${identifier}"]`);
+    const parentForm = triggeringSelect?.closest('[cf-form-submit]');
+    const formIdentifier = parentForm?.getAttribute('cf-form-submit');
+
+    if (formIdentifier) {
+      document.dispatchEvent(new CustomEvent('cf-update-form', {
+        detail: { formIdentifier }
+      }));
+    }
+  });
+</script>
+
+<!-- 🔍 cf-multiselect-handler (scroll 100% estable) 🔍 -->
+<script>
+  document.addEventListener("cf-fill-select-ready", () => {
+    const multiselects = document.querySelectorAll('select[cf-select-style="multiple"]');
+
+    multiselects.forEach(select => {
+      select.addEventListener("mousedown", (e) => {
+        if (select.multiple && e.target.tagName === "OPTION") {
+          e.preventDefault();
+
+          // ✅ Desactivar foco temporalmente
+          const option = e.target;
+
+          // 🧠 Guardar estado visual del scroll
+          const scrollTop = select.scrollTop;
+
+          // 💡 Modificar selección sin activar foco
+          requestAnimationFrame(() => {
+            option.selected = !option.selected;
+
+            // ⛔ Evita enfoque y scroll forzado
+            select.blur();
+
+            // 🚫 Restaurar posición original de scroll
+            requestAnimationFrame(() => {
+              select.scrollTop = scrollTop;
+
+              // 🔄 Lanzar evento change manualmente
+              const changeEvent = new Event("change", { bubbles: true });
+              select.dispatchEvent(changeEvent);
+            });
+          });
+        }
+      });
+    });
+
+    document.dispatchEvent(new Event("multiple-ready"));
+  });
+</script>
