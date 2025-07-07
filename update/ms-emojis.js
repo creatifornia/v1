@@ -1,0 +1,1 @@
+document.querySelectorAll("[ms-code-emoji]").forEach((e=>{var t=e.getAttribute("ms-code-emoji"),o=document.createElement("img");o.src=t;var i=window.getComputedStyle(e),l=1*parseFloat(i.fontSize);o.style.height=l+"px",o.style.width="auto",o.style.verticalAlign="text-top",e.innerHTML="",e.appendChild(o)}));
