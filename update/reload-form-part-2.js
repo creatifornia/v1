@@ -1,0 +1,1 @@
+document.addEventListener("cf-hide-this",(function(){setTimeout((()=>{document.querySelectorAll("[cf-options-display-div]").forEach((e=>{e.style.display="none"}))}),150)}));
