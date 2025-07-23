@@ -1,0 +1,148 @@
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/update/starter.js" defer></script>
+
+        <!-- /////////🌴STARTER🌴///////// -->
+      
+      <script>
+        (function() {
+          const params = new URLSearchParams(window.location.search);
+          const plan = params.get("plan");
+      
+          if (plan === "starter") {
+            // 👇 Tus scripts van aquí 👇
+      
+           //🦜 CREATFORNIA GET countries (public) v1  🦜 //
+      
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/countries').then((response) => {
+                if (response?.body?.countries) {
+                  localStorage.setItem("countriesJSON", JSON.stringify(response.body));
+                  console.log("✅ Countries");
+                  document.dispatchEvent(new CustomEvent("cf-countries-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /countries no contenía la propiedad 'countries' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /countries de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /countries.");
+            }
+          });
+        
+        
+          
+        
+        //🦜 CREATFORNIA SELECT COUNTRIES v1 🦜 select-from-json="countries //
+      
+          async function fillCountriesSelects() {
+            const jsonString = localStorage.getItem("countriesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const countries = data.countries;
+        
+            const selects = document.querySelectorAll('[select-from-json="countries"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Your country';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // 🗺️ Agrega países
+              countries.forEach(countries => {
+                const option = document.createElement('option');
+                option.value = countries.id;
+                option.textContent = countries.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select ready: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+                    document.addEventListener("cf-countries-ready", fillCountriesSelects);
+      
+        
+         
+        
+        
+        //<!-- 🦜 CREATFORNIA GET profiles v1 (public)🦜 -->//
+        
+      
+          document.addEventListener("DOMContentLoaded", function () {
+            if (typeof xano !== 'undefined') {
+              xano.get('/profiles').then((response) => {
+                if (response?.body?.profiles) {
+                  localStorage.setItem("profilesJSON", JSON.stringify(response.body));
+                  console.log("✅ Profiles");
+                  document.dispatchEvent(new CustomEvent("cf-profiles-ready"));
+                } else {
+                  console.warn("⚠️ La respuesta de /profiles no contenía la propiedad 'profiles' esperada o estaba vacía.");
+                }
+              }).catch(error => {
+                console.error("❌ Error al obtener /profiles de Xano:", error);
+              });
+            } else {
+              console.warn("⚠️ La librería Xano (xano) no está definida. No se puede obtener /profiles.");
+            }
+          });
+      
+        
+        
+          
+        
+        //<!-- 💙 🦜 CREATFORNIA SELECT PROFILES v1 🦜 select-from-json="profiles -->//
+      
+          async function fillProfilesSelects() {
+            const jsonString = localStorage.getItem("profilesJSON");
+            if (!jsonString) return;
+        
+            const data = JSON.parse(jsonString);
+            const profiles = data.profiles;
+        
+            const selects = document.querySelectorAll('[select-from-json="profiles"]');
+        
+            selects.forEach(select => {
+              // 🔁 Limpia opciones existentes
+              select.innerHTML = '';
+        
+              // 🌟 Opción inicial
+              const placeholderOption = document.createElement('option');
+              placeholderOption.disabled = true;
+              placeholderOption.selected = true;
+              placeholderOption.textContent = 'Describe yourself';
+              placeholderOption.value = '';
+              select.appendChild(placeholderOption);
+        
+              // Agrega profiles
+              profiles.forEach(profiles => {
+                const option = document.createElement('option');
+                option.value = profiles.id;
+                option.textContent = profiles.data;
+                select.appendChild(option);
+              });
+        
+              console.log(`✅ Select ready: ${select.name || select.id || '[select-from-json]'}`);
+            });
+          }
+        
+          // Ejecutar al cargar y al actualizar datos
+               document.addEventListener("cf-profiles-ready", fillProfilesSelects);
+      
+      
+            // 👆 Fin de tus scripts 👆
+          } else {
+            
+          }
+        })();
+      </script>

@@ -1,0 +1,102 @@
+<!-- 🧩 cf-options-display (checkbox) - Versión optimizada con soporte "any" -->
+<script>
+  document.addEventListener("valid-change-checkbox", (e) => {
+    const { input, value, path, isChecked } = e.detail;
+    const parent = input.closest('[cf-options-parent]')?.getAttribute("cf-options-parent");
+    
+    if (!value || !parent) return;
+
+    // 1. Manejo de divs de display (compatible con "any")
+    document.querySelectorAll(`
+      [cf-options-display-div="${parent}"][cf-options-match="${value}"],
+      [cf-options-display-div="${parent}"][cf-options-match="any"]
+    `).forEach(div => {
+      const isAny = div.getAttribute("cf-options-match") === "any";
+      
+      // Solo verificar target si no es "any"
+      if (!isAny) {
+        const target = div.querySelector(`[cf-options-child="${parent}"][cf-options-target="${value}"]`);
+        if (!target) return;
+      }
+
+      // Mostrar si: es "any" O está checked (para match específico)
+      div.style.display = (isAny || isChecked) ? "block" : "none";
+      console.log(`🔄 ${value}: ${isChecked ? '🙉' : '🙈'}`);
+    });
+
+    // 2. Manejo de grupos hijos y required (sin cambios)
+    document.querySelectorAll(`[cf-options-child="${parent}"][cf-options-target="${value}"]`).forEach(child => {
+      const hiddenInputs = child.querySelectorAll('input[cf-json-path]');
+
+
+
+
+
+      
+      hiddenInputs.forEach(hiddenInput => {
+        if (isChecked) {
+          hiddenInput.setAttribute("data-required", "");
+        } else {
+          hiddenInput.removeAttribute("data-required");
+        }
+      });
+    });
+
+    // 3. Actualización de formulario (sin cambios)
+    if (input) {
+      const parentForm = input.closest('[cf-form-submit]');
+      const formIdentifier = parentForm?.getAttribute('cf-form-submit');
+
+      if (formIdentifier) {
+        document.dispatchEvent(new CustomEvent('cf-update-form', {
+          detail: { formIdentifier }
+        }));
+      }
+    }
+  });
+</script>
+
+
+
+
+
+<!-- 🧩 cf-options-display (radio) - Versión corregida -->
+<script>
+  document.addEventListener("valid-change-radio", (e) => {
+    const { input, value, isChecked } = e.detail;
+    const parent = input.closest('[cf-options-parent]')?.getAttribute("cf-options-parent");
+    if (!value || !parent) return;
+
+    // 1. Ocultar TODOS los divs primero (excepto los "any")
+    document.querySelectorAll(`[cf-options-display-div="${parent}"]`).forEach(div => {
+      if (div.getAttribute("cf-options-match") !== "any") {
+        div.style.display = "none";
+      }
+    });
+
+    // 2. Mostrar solo los relevantes (match o any)
+    document.querySelectorAll(`
+      [cf-options-display-div="${parent}"][cf-options-match="${value}"],
+      [cf-options-display-div="${parent}"][cf-options-match="any"]
+    `).forEach(div => {
+      div.style.display = "block";
+    });
+
+    // 3. Lógica original de required
+    document.querySelectorAll(`[cf-options-child="${parent}"] input[cf-json-path]`).forEach(input => {
+      input.removeAttribute("data-required");
+    });
+    
+    if (isChecked) {
+      document.querySelectorAll(`[cf-options-child="${parent}"][cf-options-target="${value}"] input[cf-json-path]`).forEach(input => {
+        input.setAttribute("data-required", "");
+      });
+    }
+
+    // 4. Actualizar formulario
+    const formIdentifier = input.closest('[cf-form-submit]')?.getAttribute('cf-form-submit');
+    formIdentifier && document.dispatchEvent(new CustomEvent('cf-update-form', {
+      detail: { formIdentifier }
+    }));
+  });
+</script>

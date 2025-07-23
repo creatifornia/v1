@@ -1,0 +1,316 @@
+<!-- ⚡ form submit ⚡ -->
+<script>
+
+//⚡ VALIDACIONES
+
+const ValidationModule = {
+  validateRequiredFields(form) {
+    const customRequiredFields = form.querySelectorAll('[data-required]');
+    let isValid = true;
+
+    customRequiredFields.forEach(field => {
+      const rawValue = field.value;
+      let isEmpty = false;
+      
+      if (rawValue === '[]' || rawValue === '{}') {
+        isEmpty = true;
+      } else {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (Array.isArray(parsed) && parsed.length === 0) {
+            isEmpty = true;
+          } else if (typeof parsed === 'object' && Object.keys(parsed).length === 0) {
+            isEmpty = true;
+          }
+        } catch (e) {}
+      }
+      
+      if (!isEmpty) {
+        const value = rawValue?.trim();
+        isEmpty = !value;
+      }
+
+      if (isEmpty) {
+        const message = field.getAttribute('data-required-message') || 'Required*';
+        showErrorModal(message);
+        isValid = false;
+      }
+    });
+
+    return isValid;
+  },
+
+  validateCurrencyFields(form) {
+    const currencyFields = form.querySelectorAll('input[type="hidden"][data-min-amount]');
+    let isValid = true;
+
+    for (const field of currencyFields) {
+      try {
+        const value = JSON.parse(field.value);
+        const minAmount = parseFloat(field.getAttribute('data-min-amount'));
+        const maxAmount = parseFloat(field.getAttribute('data-max-amount'));
+        
+        if (value.unit_amount < minAmount) {
+          showErrorModal(field.getAttribute('data-min-message'));
+          isValid = false;
+          break;
+        }
+        
+        if (value.unit_amount > maxAmount) {
+          showErrorModal(field.getAttribute('data-max-message'));
+          isValid = false;
+          break;
+        }
+      } catch (error) {
+        console.error('❌ Error validando campo monetario:', error);
+        isValid = false;
+        break;
+      }
+    }
+    
+    return isValid;
+  }
+};
+
+
+//⚡ CONSTRUCCIÓN DE DATOS
+
+const DataBuilderModule = {
+
+  buildFormData(form, formId) {
+    const data = { form_id: formId };
+    const fields = form.querySelectorAll('[cf-json-path][data-required]');
+
+    fields.forEach(field => {
+      const path = field.getAttribute('cf-json-path');
+      if (!path) return;
+
+      const value = this.extractFieldValue(field);
+      this.setNestedProperty(data, path, value);
+    });
+
+    return data;
+  },
+
+  extractFieldValue(field) {
+    const directInputValue = field.getAttribute('cf-direct-input');
+    if (directInputValue !== null) return directInputValue;
+    if (field.type === 'checkbox') return field.checked;
+    if (field.type === 'radio') return field.checked ? field.value : undefined;
+    if (field.tagName === 'SELECT' && field.multiple) {
+      return Array.from(field.selectedOptions).map(opt => opt.value);
+    }
+    return field.value;
+  },
+
+  setNestedProperty(obj, path, value) {
+    const keys = path.split('.');
+    let current = obj;
+    keys.forEach((key, index) => {
+      if (index === keys.length - 1) {
+        current[key] = value;
+      } else {
+        if (!current[key]) current[key] = {};
+        current = current[key];
+      }
+    });
+  }
+};
+
+//⚡ ACTUALIZAR FRONTEND
+const FrontendUpdaterModule = {
+  /**
+   * Actualiza el localStorage basado en los campos del formulario
+   * @param {HTMLElement} field - Campo del formulario
+   * @param {*} value - Valor a almacenar
+   */
+  updateLocalStorageFromField(field, value) {
+    const lsKey = field.getAttribute('update-local-storage-key');
+    const lsPath = field.getAttribute('update-local-storage-path');
+
+    if (!lsKey || !lsPath) return;
+
+    try {
+      const storedData = this.getStoredData(lsKey);
+      this.updateStoredValue(storedData, lsPath, value);
+      localStorage.setItem(lsKey, JSON.stringify(storedData));
+      console.log(`💾 LocalStorage actualizado "${lsKey}" →`, storedData);
+    } catch (error) {
+      console.warn(`⚠️ Error actualizando localStorage para "${lsKey}"`, error);
+    }
+  },
+
+  /**
+   * Obtiene los datos almacenados en localStorage
+   * @param {string} key - Clave del localStorage
+   * @returns {Object} Datos almacenados
+   */
+  getStoredData(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key)) || {};
+    } catch (error) {
+      console.warn(`⚠️ No se pudo parsear localStorage["${key}"], se usará objeto vacío`);
+      return {};
+    }
+  },
+
+  /**
+   * Actualiza un valor anidado en el objeto almacenado
+   * @param {Object} storedData - Objeto almacenado
+   * @param {string} path - Ruta de la propiedad
+   * @param {*} value - Nuevo valor
+   */
+  updateStoredValue(storedData, path, value) {
+    const pathKeys = path.split('.');
+    let cursor = storedData;
+    
+    pathKeys.forEach((key, index) => {
+      if (index === pathKeys.length - 1) {
+        cursor[key] = value;
+      } else {
+        if (!cursor[key] || typeof cursor[key] !== 'object') {
+          cursor[key] = {};
+        }
+        cursor = cursor[key];
+      }
+    });
+  }
+};
+
+//⚡ ENVÍO Y REINTENTOS
+
+const SubmissionModule = {
+  MAX_ATTEMPTS: 8,
+  RETRY_DELAY: 22000,
+
+  async submitWithRetry({endpoint, verb, data, form}, attempt = 1) {
+    try {
+      console.log(`📤 Envío intento #${attempt} a ${endpoint}`, data);
+      if (typeof xano[verb] !== 'function') throw new Error(`❌ HTTP verb not supported: ${verb}`);
+
+      const response = await xano[verb](endpoint, data);
+      console.log("🦜 Response:", response);
+
+      if (localStorage.getItem("uploadcare")) {
+        localStorage.removeItem("uploadcare");
+        console.log("🧹 Uploadcare removed");
+      }
+
+      this.handleResponseEvents(response);
+
+      if (response?.body?.redirect_url) {
+        window.location.href = response.body.redirect_url;
+        return;
+      }
+
+      if (response?.body === "retry") {
+        console.warn("⏳ Respuesta 'retry' recibida. Reintentando en 22 segundos...");
+        if (attempt < this.MAX_ATTEMPTS) {
+          setTimeout(() => this.submitWithRetry({endpoint, verb, data, form}, attempt + 1), this.RETRY_DELAY);
+        } else {
+          showErrorModal("Demasiados intentos. Intenta más tarde.");
+        }
+        return;
+      }
+
+      console.log("✅ Submit");
+    } catch (error) {
+      console.error(`❌ Error en envío a ${endpoint}:`, error);
+      showErrorModal("Error al enviar. Intenta más tarde.");
+    } finally {
+      form.removeAttribute('data-submitting');
+    }
+  },
+
+  handleResponseEvents(response) {
+    if (response?.body?.event) {
+      document.dispatchEvent(new CustomEvent(response.body.event, {
+        detail: response.body.data || {},
+        bubbles: true
+      }));
+    }
+
+    if (response?.body?.error) {
+      showErrorModal(response.body.error);
+    }
+  }
+};
+
+
+//⚡ MANEJADOR DE FORMULARIOS
+
+const FormHandlerModule = {
+  initialize(form) {
+    if (form._submitHandler) {
+      form.removeEventListener("submit", form._submitHandler);
+    }
+
+    form._submitHandler = this.createSubmitHandler(form);
+    form.addEventListener("submit", form._submitHandler);
+  },
+
+  createSubmitHandler(form) {
+    const formId = form.getAttribute('cf-form-submit') || 'unnamed_form';
+    const endpoint = form.getAttribute('cf-endpoint') || '/default_endpoint';
+    const verb = (form.getAttribute('cf-verb') || 'patch').toLowerCase();
+
+    return async (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      if (!ValidationModule.validateRequiredFields(form)) return;
+      if (!ValidationModule.validateCurrencyFields(form)) return;
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      if (form.hasAttribute('data-submitting')) {
+        console.warn("⏸️ Formulario ya en proceso de envío");
+        return;
+      }
+      form.setAttribute('data-submitting', 'true');
+
+      const authToken = localStorage.getItem("AuthToken");
+      if (!authToken || typeof xano === 'undefined') {
+        console.error("❌ No AuthToken or Xano instance found");
+        form.removeAttribute('data-submitting');
+        return;
+      }
+
+      xano.setAuthToken(authToken);
+      const data = DataBuilderModule.buildFormData(form, formId);
+      await SubmissionModule.submitWithRetry({endpoint, verb, data, form});
+    };
+  }
+};
+
+
+//⚡ INICIALIZACIÓN GLOBAL
+
+const InitializationModule = {
+  initializeAllForms() {
+    document.querySelectorAll('[cf-form-submit]').forEach(form => {
+      FormHandlerModule.initialize(form);
+    });
+    document.dispatchEvent(new Event("submit-ready"));
+  },
+
+  updateSingleForm(e) {
+    const formId = e.detail?.formIdentifier;
+    if (!formId) {
+      console.error("❌ cf-update-form recibido sin formIdentifier");
+      return;
+    }
+    const form = document.querySelector(`[cf-form-submit="${formId}"]`);
+    if (form) FormHandlerModule.initialize(form);
+    console.log("✅ Form updated");
+  }
+};
+
+
+//⚡ INICIALIZACIÓN Y EVENTOS GLOBALES
+
+document.addEventListener("cf-inputs-ready", InitializationModule.initializeAllForms);
+document.addEventListener("cf-update-form", InitializationModule.updateSingleForm);
+</script>

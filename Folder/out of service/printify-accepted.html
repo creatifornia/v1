@@ -1,0 +1,53 @@
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/update/printify-accepted.js" defer></script>
+
+<!--  🦜 cf-printify-accepted 🦜 -->
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    // Obtener los parámetros "code" y "state" de la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+
+    // Si no hay code, no hacemos nada
+    if (!code) return;
+
+    // Prevenir múltiples envíos
+    if (sessionStorage.getItem("printify_code_sent")) return;
+
+    const endpoint = "/oauth_states/accepted_0";
+    const verb = "post";
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (!authToken || typeof xano === 'undefined') {
+      console.error("❌ No AuthToken or Xano instance found");
+      return;
+    }
+
+    xano.setAuthToken(authToken);
+
+    try {
+      if (typeof xano[verb] !== 'function') {
+        throw new Error(`❌ HTTP verb not supported: ${verb}`);
+      }
+
+      const payload = { code, state };
+      const response = await xano[verb](endpoint, payload);
+
+      console.log(`✅ ${verb.toUpperCase()} to ${endpoint}`);
+      console.log("📦 Printify-accepted Response:", response);
+
+      // Manejo de redirección si viene en la respuesta
+      if (response.body?.redirect_url) {
+        console.log("🔀 Redirecting a:", response.body.redirect_url);
+        window.location.href = response.body.redirect_url;
+        return;
+      }
+
+      // Marcar como enviado
+      sessionStorage.setItem("printify_code_sent", "true");
+
+    } catch (error) {
+      console.error("❌ Error al enviar código a Xano:", error);
+    }
+  });
+</script>

@@ -1,0 +1,1 @@
+document.addEventListener("creatifornia-ready",(function(){function e(){document.querySelectorAll('[name="cf-reset-tabs"]').forEach((e=>{const t=e.closest("[data-w-tab]");t&&(t.setAttribute("data-w-tab","none"),console.log("✅ Tabs reset"))}))}e(),document.addEventListener("cf-reset-tabs",e)}));

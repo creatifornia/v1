@@ -1,0 +1,156 @@
+<uc-config
+  ctx-name="new-kit-main"
+  pubkey="a4083f9a6c359a1aa43b"
+  locale-name="es"
+  multiple="true"
+  multiple-max="10"
+  group-output="false"
+  confirm-upload="false"
+  source-list="local, gdrive, gphotos, dropbox, onedrive"
+  img-only="true"
+  use-cloud-image-editor="true"
+  crop-preset="1:1"
+  cloud-image-editor-tabs="crop"
+
+  
+
+></uc-config>
+
+<!-- ✅ Uploadcare File Uploader -->
+<uc-file-uploader-minimal ctx-name="new-kit-main">
+  <uc-form-input ctx-name="new-kit-main"></uc-form-input>
+</uc-file-uploader-minimal>
+
+<!-- ✅ Hidden Input vinculado con validación personalizada -->
+<input 
+  type="hidden"
+  name="new-kit-main"
+  cf-local-storage-key="uploadcare"
+  cf-local-storage-path="new-kit-main.url"
+  cf-json-path="new-kit-main"
+  
+/>
+
+<!-- ✅ Uploadcare Context Listener -->
+<uc-upload-ctx-provider ctx-name="new-kit-main"></uc-upload-ctx-provider>
+<script>
+  customElements.whenDefined('uc-upload-ctx-provider').then(() => {
+    setTimeout(() => {
+      const ctxProvider = document.querySelector('uc-upload-ctx-provider[ctx-name="new-kit-main"]');
+      if (!ctxProvider) return;
+
+      const storageKey = "uploadcare";
+      const pathKey = "new-kit-main";
+      const pathField = "url";
+
+      // ✅ Al subir un archivo
+      ctxProvider.addEventListener("file-url-changed", (e) => {
+        const cdnUrl = e.detail?.cdnUrl;
+        if (!cdnUrl) return;
+
+        let store = {};
+        try {
+          store = JSON.parse(localStorage.getItem(storageKey)) || {};
+        } catch {}
+
+        if (!store[pathKey]) store[pathKey] = {};
+        store[pathKey][pathField] = cdnUrl;
+
+        localStorage.setItem(storageKey, JSON.stringify(store));
+        console.log("✅ Uploadcare guardado:", cdnUrl);
+
+        const input = document.querySelector('input[name="new-kit-main"]');
+        const formIdentifier = input.closest('form')?.getAttribute('cf-form-submit');
+
+        document.dispatchEvent(new CustomEvent("cf-fill-specific-inputs", {
+          detail: {
+            key: storageKey,
+            path: `${pathKey}.${pathField}`,
+            formIdentifier
+           }
+        }));
+      });
+
+      // ✅ Al quitar un archivo
+      ctxProvider.addEventListener("file-removed", () => {
+        let store = {};
+        try {
+          store = JSON.parse(localStorage.getItem(storageKey)) || {};
+        } catch {}
+
+        if (store[pathKey] && store[pathKey][pathField]) {
+          delete store[pathKey][pathField];
+          if (Object.keys(store[pathKey]).length === 0) delete store[pathKey];
+          if (Object.keys(store).length === 0) {
+            localStorage.removeItem(storageKey);
+            console.log("🧹 Se eliminó todo el objeto Uploadcare");
+          } else {
+            localStorage.setItem(storageKey, JSON.stringify(store));
+            console.log("🧹 Uploadcare actualizado (campo eliminado)");
+          }
+
+          const input = document.querySelector(`input[cf-local-storage-key="${storageKey}"][cf-local-storage-path="${pathKey}.${pathField}"]`);
+          const formIdentifier = input?.getAttribute("cf-form-submit-identifier");
+
+          document.dispatchEvent(new CustomEvent("cf-fill-specific-inputs", {
+            detail: {
+              key: storageKey,
+              path: `${pathKey}.${pathField}`,
+              formIdentifier
+              }
+          }));
+        }
+      });
+
+    }, 100);
+  }).catch(error => {
+    console.error("❌ Error en UploadCare:", error);
+  });
+</script>
+
+
+<!-- ✅ Image size validator-->
+<script>
+  const imageValidator2 = (fileEntry) => {
+    // Configuración
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+    const DENIED_TYPES = ['image/svg+xml', 'image/gif'];
+    const MIME_TEXT = DynamicText.get("mime");
+    const MAX_SIZE_TEXT = DynamicText.get("max_size");
+
+    // 1. Validar tipo de archivo
+    if (!fileEntry.mimeType || DENIED_TYPES.includes(fileEntry.mimeType)) {
+      return {
+        message: `${MIME_TEXT}`,
+        code: "INVALID_TYPE"
+      };
+    }
+
+    if (!ALLOWED_TYPES.includes(fileEntry.mimeType)) {
+      return {
+        message: `${MIME_TEXT}`,
+        code: "INVALID_TYPE"
+      };
+    }
+
+    // 2. Validar tamaño
+    if (fileEntry.size > MAX_SIZE_BYTES) {
+        return {
+        message: `${MAX_SIZE_TEXT} ${MAX_SIZE_MB}MB`,
+        code: "SIZE_EXCEEDED"
+      };
+    }
+
+    return null; // Archivo válido
+  };
+
+  // Configuración del validador
+  document.addEventListener('DOMContentLoaded', () => {
+    customElements.whenDefined('uc-config').then(() => {
+      const config = document.querySelector('uc-config[ctx-name="new-kit-main"]');
+      if (config) config.fileValidators = [imageValidator2];
+    });
+  });
+</script>

@@ -1,0 +1,94 @@
+<style>
+  .hide-this {
+    display: none;
+  }
+</style>
+
+<!-- uploadcare -->
+<script>
+  // eliminar uploadcare de local storage
+  window.addEventListener('DOMContentLoaded', () => {
+    localStorage.removeItem('uploadcare');
+    console.log('🗑️ Key "uploadcare" eliminada de localStorage');
+  });
+</script>
+
+<style>
+  /* 1. Transparencia en área principal */
+  uc-start-from .uc-content,
+  uc-start-from .uc-content * {
+    background: transparent !important;
+  }
+
+  /* 2. Padding en área de drop */
+  [uc-drop-area] {
+    padding: 25px !important;
+  }
+
+  /* 3. Oculta créditos */
+  .uc-credits {
+    display: none !important;
+  }
+
+  /* 4. Oculta botón "Done" en toolbar */
+  .uc-toolbar .uc-done-btn {
+    display: none !important;
+  }
+
+  /* 5. Muestra botón "Done" en content */
+  .uc-content .uc-done-btn {
+    display: inline-flex !important;
+  }
+
+  /* 6. Oculta .uc-tab-content-row solo en el uploader image-preview */
+  [ctx-name="image-preview"] .uc-tab-content-row {
+    display: none !important;
+  }
+
+  /* 7. Oculta botón "Cancel" */
+  .uc-cancel-btn {
+    display: none !important;
+  }
+  
+
+  
+</style>
+
+
+<style>
+.invalid {
+  border-color: #ff4444 !important;
+  animation: shake 0.5s;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+  
+</style>
+
+
+<style>
+.integer-input.invalid {
+  border: 2px solid #ff4444 !important;
+  animation: shake 0.5s;
+  box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-6px); }
+  30%, 60%, 90% { transform: translateX(6px); }
+}
+
+</style>
+
+
+<style>
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+</style>

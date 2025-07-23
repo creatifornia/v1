@@ -1,0 +1,14 @@
+ <!--------------------- 🐞 Uploadcare 🐞  --------------------->
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
+
+<script type="module">
+  import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
+  import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
+
+  // Define el locale español
+  UC.defineLocale('es', es); //me puedes cambiar este renglon a UC.defineLocale(OfficesText.get('country.lang.ISO_639')
+
+  // Define los componentes después de definir el locale
+  UC.defineComponents(UC);
+</script>
