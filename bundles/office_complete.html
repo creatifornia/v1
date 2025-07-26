@@ -1,6 +1,6 @@
-<!-------------------------🦜 Get Data 🦜------------------------>
+<!-------------------------🦜 Data 🦜------------------------>
 
-<!-- 🦜 #2 GET Creatifornia  🦜 -->
+<!-- 🦜 Offices  🦜 -->
 <script type="text/javascript">
   document.addEventListener("DOMContentLoaded", initCreatifornia);
   document.addEventListener("get-creatifornia", initCreatifornia);
@@ -26,7 +26,7 @@
   }
 </script>
 
-<!-- 🦧 GET Options  🦧 -->
+<!-- 🦧 Options  🦧 -->
 <script type="text/javascript">
   document.addEventListener("creatifornia-ready", initOptions);
   
@@ -170,7 +170,7 @@
   }
 </script>
 
-<!-- 📘 GET dynamic_text 📘 -->
+<!-- 📘 Dynamic_text 📘 -->
 <script type="text/javascript">
   document.addEventListener("creatifornia-ready", dynamicText);
   
@@ -271,7 +271,7 @@
   }
 </script>
 
-<!-- 🔠 GET translate 🔠 -->
+<!-- 🔠 Translate 🔠 -->
 <script type="text/javascript">
   document.addEventListener("creatifornia-ready", dynamicText);
   
@@ -303,7 +303,7 @@
       const lang = await getLanguageWithRetry();
       
       if (lang === 'es') {
-        console.log("🔠 Ready");
+        console.log("🌎 Es");
         document.dispatchEvent(new CustomEvent("translate-not-needed", {
           detail: { lang }
         }));
@@ -318,7 +318,7 @@
       const forceRefresh = urlParams.has('update');
       
       if (forceRefresh && existingText) {
-        console.log("🔠 by URL");
+        console.log("🌎 by URL");
         localStorage.removeItem("translate");
       }
       
@@ -332,7 +332,7 @@
           
           if (storedVersion === CURRENT_TRANSLATE_VERSION) {
             document.dispatchEvent(new Event("translate-data-ready")); 
-            console.log("🔠 Translate data");
+            console.log("🌎 Translate");
             return;
           }
           
@@ -400,7 +400,7 @@
 </script>
 
 
-<!----------------------- ⏰ events (Data) delay ⏰ ----------------------->
+<!--⏰ events (Data) delay ⏰ -->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -415,7 +415,7 @@
       if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
         clearTimeout(readyTimer); // Cancelar timer previo si existe
         readyTimer = setTimeout(() => {
-          console.log("⏰ Data (con delay de 200ms)");
+          console.log("⏰ Data");
           document.dispatchEvent(new Event("data-ready"));
           resetCoordinator();
         }, 200); 
@@ -450,9 +450,9 @@
 
 
 
-<!------------------------🐳 Fill Data 🐳 ------------------------>
+<!------------------------🐳 Fill  🐳 ------------------------>
 
-<!-- 🦜 #4 fill-text 🦜 -->
+<!-- 🦜 fill-text 🦜 -->
 <script type="text/javascript">
   document.addEventListener("data-ready", fillTextFromLocalStorage);
 
@@ -519,7 +519,7 @@
   }
 </script>
 
-<!-- 🦜 #5 fill-inputs 🦜 -->
+<!-- 🦜 fill-inputs 🦜 -->
 <script type="text/javascript">
   document.addEventListener("data-ready", fillInputsFromLocalStorage);
 
@@ -598,7 +598,7 @@
   }
 </script>
 
-<!-- 🌍 Translate 🌍 -->
+<!-- 🌍 Translation 🌍 -->
 <script>
 document.addEventListener('translate-data-ready', function() {
     try {
@@ -649,9 +649,7 @@ document.addEventListener('data-ready', () => {
 </script>
 
 
-
-
-<!----------------------- ⏰ events (Fill) ⏰ ----------------------->
+<!--⏰ events (Fill) ⏰ -->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -1133,7 +1131,10 @@ document.addEventListener('data-ready', function() {
     const jsonPath = container.getAttribute('json-path');
     const template = document.getElementById(componentId);
     const messagePath = container.getAttribute('message-path');
-    const buildMessage = DynamicText.getWithDefault(messagePath, 'Campo requerido');
+    const buildMessage = DynamicText.getWithDefault(messagePath, 'Required*');
+    const previewUsernamePath = container.getAttribute('preview-username');
+    const previewUrlPath = container.getAttribute('preview-url-friendly');
+
     
     if (!template) {
       console.error(`❌ No se encontró template con id="${componentId}"`);
@@ -1196,13 +1197,13 @@ document.addEventListener('data-ready', function() {
       
       const friendly = toUrlFriendly(value);
       
-      // Actualizar ambos previews
+    // Actualizar ambos previews
       if (previewText) {
-        previewText.textContent = usernameDisplay || DynamicText.getWithDefault(messagePath, '');
+        previewText.textContent = usernameDisplay || DynamicText.getWithDefault(previewUsernamePath, 'Username');
       }
       
       if (previewUrl) {
-        previewUrl.textContent = friendly || DynamicText.getWithDefault(messagePath, '');
+        previewUrl.textContent = friendly || DynamicText.getWithDefault(previewUrlPath, 'username');
       }
       
       // Actualizar hidden input
@@ -1294,8 +1295,7 @@ document.addEventListener('data-ready', function() {
 </script>
 
 
-
-<!----------------------- ⏰ events (Inputs)  ----------------------->
+<!--⏰ events (Inputs)  -->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -1323,7 +1323,6 @@ document.addEventListener('data-ready', function() {
     REQUIRED_EVENTS.forEach(eventName => {
       document.addEventListener(eventName, () => {
         if (!receivedEvents.has(eventName)) {
-          console.log(`📥 Event (inputs): ${eventName}`);
           receivedEvents.add(eventName);
           checkAllReady();
         }
@@ -1666,7 +1665,7 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 
 <!------------------------🙉 Display 🙉 ------------------------>
 
-
+<!-- 🙉 Display 🙉 -->
 <script type="text/javascript">
   document.addEventListener("data-ready", handleDisplayLogic);
 
@@ -1742,7 +1741,7 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 </script>
 
 
-<!----------------------- ⏰ events (Loader-off) ⏰ ----------------------->
+<!--⏰ events (Display) ⏰ --->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -1771,7 +1770,6 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
     REQUIRED_EVENTS.forEach(eventName => {
       document.addEventListener(eventName, () => {
         if (!receivedEvents.has(eventName)) {
-          console.log(`📥 Event (loader): ${eventName}`);
           receivedEvents.add(eventName);
           checkAllReady();
         }
@@ -1795,7 +1793,7 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 
 <!------------------------🐇 Handlers 🐇------------------------>
 
-<!-- 🎯 cf-options-handler actualizado para Xano (envía ID y valores simplificados) -->
+<!-- 🎯 options-handler -->
 <script>
 document.addEventListener("options-builder-ready", () => {
   document.querySelectorAll("[cf-options-value]").forEach(input => {
@@ -1899,7 +1897,7 @@ function showErrorModal(message) {
 }
 </script>
 
-<!-- 🧩 cf-options-display (checkbox) - Versión optimizada con soporte "any" -->
+<!-- 🧩 options-checkbox -->
 <script>
   document.addEventListener("valid-change-checkbox", (e) => {
     const { input, value, path, isChecked } = e.detail;
@@ -1971,7 +1969,7 @@ document.querySelectorAll(`
 </script>
 
 
-<!-- 🧩 cf-options-display (radio) -->
+<!-- 🧩 options-radio -->
 <script>
   document.addEventListener("valid-change-radio", (e) => {
     const { input, value, isChecked } = e.detail;
@@ -2413,7 +2411,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
-<!----------------------- 🐬 .get('') 🐬 ----------------------->
+<!----------------------- 🐬  GetData .get('') 🐬 ----------------------->
 <!-- 🐬 DynamicText.get('') 🐬 -->
 <script>
 window.DynamicText = {
@@ -2474,13 +2472,40 @@ window.Offices = {
 <script type="module">
   import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
   import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
+  import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
 
-  // Define el locale español
-  UC.defineLocale('es', es);
+  // Función para inicializar UploadCare con el locale correcto
+  const initUploadCare = () => {
+    try {
+      const lang = window.OfficesText?.get('country.lang.ISO_639') || 'es'; // Safe access with optional chaining
+      
+      if (lang === 'es') {
+        UC.defineLocale('es', es);
+      } else {
+        UC.defineLocale('en', en); // Default to English for any non-Spanish language
+      }
 
-  // Define los componentes después de definir el locale
-  UC.defineComponents(UC);
+      UC.defineComponents(UC);
+    } catch (error) {
+      console.error('Error initializing UploadCare:', error);
+      // Fallback to Spanish if any error occurs
+      UC.defineLocale('es', es);
+      UC.defineComponents(UC);
+    }
+  };
+
+  // Esperar a que los textos dinámicos estén listos
+  if (window.DynamicText && window.OfficesText) {
+    document.addEventListener('dynamic_text-ready', initUploadCare);
+  } else {
+    // Cargar con valores por defecto si no existe el sistema de textos
+    console.warn('DynamicText/OfficesText no disponibles, cargando UploadCare con español por defecto');
+    UC.defineLocale('es', es);
+    UC.defineComponents(UC);
+  }
 </script>
+
+
 
 
 

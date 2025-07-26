@@ -1,0 +1,171 @@
+<!-- 🔤 url-friendly-builder (actualizado) -->
+<script>
+document.addEventListener('data-ready', function() {
+  const containers = document.querySelectorAll('[url-friendly]');
+  
+  containers.forEach(container => {
+    const componentId = container.getAttribute('url-friendly');
+    const jsonPath = container.getAttribute('json-path');
+    const template = document.getElementById(componentId);
+    const usernamePath = container.getAttribute('message-username');
+    const urlPath = container.getAttribute('message-url');
+    const buildMessageUsername = DynamicText.getWithDefault(usernamePath, 'Username');
+    const buildMessageUrl = DynamicText.getWithDefault(urlPath, 'username');
+    
+    if (!template) {
+      console.error(`❌ No se encontró template con id="${componentId}"`);
+      return;
+    }
+    
+    // Clonar el template conservando estructura y clases
+    const clone = template.cloneNode(true);
+    clone.removeAttribute('id');
+    container.appendChild(clone);
+    
+    // Obtener elementos del clon
+    const previewText = clone.querySelector('[update-this-with-type-username]');
+    const previewUrl = clone.querySelector('[update-this-with-type-url]');
+    const input = clone.querySelector('[text-input-element]');
+    
+    // Crear input hidden para los datos
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.setAttribute('cf-json-path', jsonPath);    
+    hiddenInput.setAttribute('data-required-message', buildMessage);
+    hiddenInput.setAttribute('data-required', '');
+    hiddenInput.value = JSON.stringify({
+      club_name: '',
+      url_friendly: ''
+    });
+    container.insertBefore(hiddenInput, clone);
+    
+    // Función para validar caracteres (ahora permite espacios)
+    function isValidChar(char) {
+      return /^[\p{L}\p{N}\s_-]$/u.test(char);
+    }
+    
+    // Función para normalizar texto a URL friendly
+    function toUrlFriendly(text) {
+      return text.trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-')       // Espacios a guiones
+        .replace(/_/g, '-')         // Guiones bajos a guiones
+        .normalize('NFD')           // Separar caracteres y acentos
+        .replace(/[\u0300-\u036f]/g, '')  // Eliminar diacríticos
+        .replace(/[^\w-]/g, '');    // Eliminar caracteres no alfanuméricos
+    }
+    
+    // Función para mostrar error (shake)
+    function showInputError() {
+      input.classList.add('invalid');
+      setTimeout(() => input.classList.remove('invalid'), 500);
+    }
+    
+    // Actualizar vista y datos
+    function updateUrlPreview(value) {
+      // Limitar a 20 caracteres (ahora se aplica directamente al input)
+      const normalized = value.trim();
+      
+      // Aplicar formato especial para el preview de nombre de usuario
+      const usernameDisplay = normalized
+        .replace(/-/g, '_')  // Reemplazar guiones por guiones bajos
+        .replace(/\s+/g, ' '); // Mantener espacios como espacios
+      
+      const friendly = toUrlFriendly(value);
+      
+      // Actualizar ambos previews
+      if (previewText) {
+        previewText.textContent = usernameDisplay || DynamicText.getWithDefault(buildMessageUsername, '');
+      }
+      
+      if (previewUrl) {
+        previewUrl.textContent = friendly || DynamicText.getWithDefault(buildMessageUrl, '');
+      }
+      
+      // Actualizar hidden input
+      hiddenInput.value = JSON.stringify({
+        club_name: normalized,
+        url_friendly: friendly
+      });
+    }
+    
+    // Event listeners
+    if (input) {
+      let lastValidValue = '';
+      const MAX_LENGTH = 20;
+      
+      input.addEventListener('input', (e) => {
+        const value = e.target.value;
+        
+        // Verificar límite de caracteres
+        if (value.length > MAX_LENGTH) {
+          input.value = lastValidValue;
+          showInputError();
+          return;
+        }
+        
+        // Verificar cada carácter nuevo
+        const newChar = value.length > lastValidValue.length ? 
+                        value.charAt(value.length - 1) : null;
+        
+        // Si se añade un carácter inválido
+        if (newChar && !isValidChar(newChar)) {
+          // Revertir al último valor válido
+          input.value = lastValidValue;
+          showInputError();
+          return;
+        }
+        
+        // Actualizar el último valor válido
+        lastValidValue = value;
+        updateUrlPreview(value);
+      });
+      
+      // Manejar eventos de teclado para prevenir caracteres inválidos
+      input.addEventListener('keypress', (e) => {
+        const char = String.fromCharCode(e.keyCode || e.which);
+        
+        if (!isValidChar(char)) {
+          e.preventDefault();
+          showInputError();
+        }
+      });
+      
+      // Manejar pegado de texto
+      input.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const clipboardData = e.clipboardData || window.clipboardData;
+        const pastedText = clipboardData.getData('text');
+        let validText = lastValidValue;
+        
+        // Filtrar solo caracteres válidos
+        for (const char of pastedText) {
+          if (validText.length >= MAX_LENGTH) break;
+          if (isValidChar(char)) {
+            validText += char;
+          }
+        }
+        
+        // Actualizar el valor con solo caracteres válidos
+        input.value = validText;
+        lastValidValue = validText;
+        updateUrlPreview(validText);
+        
+        // Mostrar error si se truncó texto
+        if (validText.length < (lastValidValue.length + pastedText.length)) {
+          showInputError();
+        }
+      });
+      
+      // Inicializar
+      updateUrlPreview(input.value);
+      lastValidValue = input.value;
+    }
+    
+    // Ocultar template original
+    template.style.display = 'none';
+  });
+
+  document.dispatchEvent(new Event('url-builder-ready'));
+});
+</script>
