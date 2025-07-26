@@ -1,1 +1,0 @@
-const clickTriggers=document.querySelectorAll("[cf-click-trigger]");clickTriggers.forEach((c=>{const e=c.getAttribute("cf-click-trigger");c.addEventListener("click",(()=>{const c=document.querySelectorAll(`[cf-click-target="${e}"]`);0!==c.length?c.forEach((c=>{c.click(),c.focus()})):console.warn(`No elements found with cf-click-target="${e}"`)}))}));
