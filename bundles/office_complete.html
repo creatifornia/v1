@@ -598,43 +598,6 @@
   }
 </script>
 
-<!-- 🌍 Translation 🌍 -->
-<script>
-document.addEventListener('translate-data-ready', function() {
-    try {
-        // Obtener datos de traducción
-        const translateData = JSON.parse(localStorage.getItem('translate')) || {};
-        
-        // Seleccionar todos los elementos con atributo cf
-        const elements = document.querySelectorAll('[cf]');
-        
-        // Procesar cada elemento
-        elements.forEach(element => {
-            const componentName = element.getAttribute('cf');
-            if (translateData[componentName]) {
-                // Preservar HTML interno si es necesario
-                if (element.innerHTML.trim() !== element.textContent.trim()) {
-                    element.innerHTML = translateData[componentName];
-                } else {
-                    element.textContent = translateData[componentName];
-                }
-            }
-        });
-    } catch (error) {
-        console.error('❌ Translation binding error:', error);
-    }
-    
-    // Disparar evento de finalización
-    document.dispatchEvent(new Event('translation-finished'));
-    console.log("🌍 Translation");
-});
-
-document.addEventListener('translate-not-needed', function() {
-    // Disparar inmediatamente evento de finalización
-    document.dispatchEvent(new Event('translation-finished'));
-});
-</script>
-
 
 <!-- 🦜 direct-inputs 🦜 -->
 <script>
@@ -1665,6 +1628,44 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 
 <!------------------------🙉 Display 🙉 ------------------------>
 
+
+<!-- 🌍 Translation 🌍 -->
+<script>
+document.addEventListener('inputs-ready', function() {
+    try {
+        // Obtener datos de traducción
+        const translateData = JSON.parse(localStorage.getItem('translate')) || {};
+        
+        // Seleccionar todos los elementos con atributo cf
+        const elements = document.querySelectorAll('[cf]');
+        
+        // Procesar cada elemento
+        elements.forEach(element => {
+            const componentName = element.getAttribute('cf');
+            if (translateData[componentName]) {
+                // Preservar HTML interno si es necesario
+                if (element.innerHTML.trim() !== element.textContent.trim()) {
+                    element.innerHTML = translateData[componentName];
+                } else {
+                    element.textContent = translateData[componentName];
+                }
+            }
+        });
+    } catch (error) {
+        console.error('❌ Translation binding error:', error);
+    }
+    
+    // Disparar evento de finalización
+    document.dispatchEvent(new Event('translation-finished'));
+    console.log("🌍 Translation");
+});
+
+document.addEventListener('translate-not-needed', function() {
+    // Disparar inmediatamente evento de finalización
+    document.dispatchEvent(new Event('translation-finished'));
+});
+</script>
+
 <!-- 🙉 Display 🙉 -->
 <script type="text/javascript">
   document.addEventListener("data-ready", handleDisplayLogic);
@@ -1748,6 +1749,7 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
       "display-ready",
       "submit-ready",        
       "fill-ready",
+      "translation-finished"
                 ];
 
     let receivedEvents = new Set();
@@ -2351,21 +2353,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- 🐬 mirror click 🐬 -->
 <script>
-          // Encuentra todos los elementos con el atributo cf-click-trigger
-  const clickTriggers = document.querySelectorAll('[cf-click-trigger]');
-        
-  clickTriggers.forEach(trigger => {
-  const id = trigger.getAttribute('cf-click-trigger');
-        
-    trigger.addEventListener('click', () => {
-    const target = document.querySelector(`[cf-click-target="${id}"]`);
-    if (!target) {
-    console.warn(`No element found with cf-click-target="${id}"`);
-    return;
-    }
-        
-  target.click(); // Ejecuta el clic en el elemento objetivo
-  });
+  // Espera a que el evento 'inputs-ready' sea disparado desde OTRO lugar
+  document.addEventListener('inputs-ready', () => {
+    
+    // Configura el mirror click para todos los triggers
+    document.querySelectorAll('[cf-click-trigger]').forEach(trigger => {
+      const targetId = trigger.getAttribute('cf-click-trigger');
+      
+      trigger.addEventListener('click', () => {
+        // Activa TODOS los elementos target correspondientes
+        document.querySelectorAll(`[cf-click-target="${targetId}"]`).forEach(target => {
+          target.click();
+          target.focus(); // Asegura que los inputs reciban foco
+        });
+      });
+    });
+    
   });
 </script>
 

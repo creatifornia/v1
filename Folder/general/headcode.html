@@ -1,0 +1,25 @@
+<script>
+  (function() {
+    // Lista negra de rutas (personaliza según tu proyecto)
+    const blacklist = [
+      'login', 'signup', 'start', 'office', '404',
+      'club', 'about', 'contact', 'pricing', 'dashboard'
+      // Añade todas tus rutas existentes aquí
+    ].map(item => item.toLowerCase());
+
+    // Obtener el path de la URL
+    const path = window.location.pathname;
+    
+    // Extraer el segmento dinámico (lo que viene después de .com/)
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length === 0) return;  // Si es la home, no hacer nada
+    
+    const dynamicSegment = segments[0].split('?')[0].toLowerCase();
+
+    // Verificar si el segmento está en la lista negra
+    if (!blacklist.includes(dynamicSegment)) {
+      // Redirigir manteniendo mayúsculas/minúsculas originales
+      window.location.replace(`/club?${encodeURIComponent(segments[0])}`);
+    }
+  })();
+</script>

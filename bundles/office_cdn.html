@@ -1,4 +1,4 @@
-<!-------------------------🦜 Data 🦜------------------------->
+<!-------------------------🦜 Data 🦜-------------------------> 
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/offices.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/options.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/dynamic-text.js" defer></script>
@@ -9,9 +9,8 @@
 <!------------------------🐳 Fill  🐳 ------------------------>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-text.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/translation.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/direct-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/events-fill.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/events-fill.js" defer></script> //cambiar
 
 
 <!------------------------🧱 Builders 🧱---------------------->
@@ -27,8 +26,9 @@
 
 
 <!------------------------🙉 Display 🙉 ---------------------->
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/translation.js" defer></script> //cambiar
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/display.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/events-display.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/events-display-v1.js" defer></script>
 
 
 <!------------------------🐇 Handlers 🐇---------------------->
@@ -40,7 +40,7 @@
 <!----------------------- 🐬 Tools 🐬 ------------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/loader.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/fill-specific-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/mirror-click.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/mirror-click-v3.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/modal-error.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/refresh.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/reload-form.js" defer></script>
@@ -103,3 +103,84 @@
       </button>
     </div>
   </div>
+
+
+
+  <script type="text/javascript">
+  document.addEventListener("creatifornia-ready", fetchData);
+
+  const CURRENT_DATA_VERSION = 'v1.0';
+
+  function fetchData() {
+    (async () => {
+      const authToken = localStorage.getItem("AuthToken");
+      const existingData = localStorage.getItem("data");
+      
+      // Verificar parámetro de actualización
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceRefresh = urlParams.has('update');
+      
+      if (forceRefresh && existingData) {
+        console.log("📦 Data API by URL");
+        localStorage.removeItem("data");
+      }
+      
+      // Verificar cache
+      if (existingData && !forceRefresh) {
+        try {
+          const parsedData = JSON.parse(existingData);
+          if (parsedData.version === CURRENT_DATA_VERSION) {
+            document.dispatchEvent(new Event("data-api-ready")); 
+            console.log("📦 Data API");
+            return;
+          }
+          localStorage.removeItem("data");
+        } catch (e) {
+          console.warn("Corrupted data, refreshing...");
+          localStorage.removeItem("data");
+        }
+      }
+
+      if (authToken) {
+        xano.setAuthToken(authToken);
+        
+        try {
+          const response = await xano.get('/data');
+          if (response?.body) {
+            // Función para limpiar la estructura
+            const cleanStructure = (data) => {
+              if (Array.isArray(data)) {
+                // Convertir array a objeto manteniendo las claves originales
+                let result = {};
+                data.forEach(item => {
+                  if (typeof item === 'object' && item !== null) {
+                    Object.keys(item).forEach(key => {
+                      result[key] = cleanStructure(item[key]);
+                    });
+                  }
+                });
+                return result;
+              } else if (typeof data === 'object' && data !== null) {
+                let result = {};
+                Object.keys(data).forEach(key => {
+                  result[key] = cleanStructure(data[key]);
+                });
+                return result;
+              }
+              return data;
+            };
+            
+            const cleanedData = cleanStructure(response.body);
+            cleanedData.version = CURRENT_DATA_VERSION;
+            
+            localStorage.setItem("data", JSON.stringify(cleanedData));
+            console.log(`📦 Data API (${CURRENT_DATA_VERSION})`);
+            document.dispatchEvent(new Event("data-api-ready"));
+          }
+        } catch (error) {
+          console.error("❌ Data fetch error:", error);
+        }
+      }
+    })();
+  }
+</script>
