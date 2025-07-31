@@ -1,1 +1,0 @@
-window.DynamicText={get:function(t){try{return JSON.parse(localStorage.getItem("dynamic_text")||"{}")[t]}catch(t){return void console.error("Error al leer dynamic_text:",t)}},getWithDefault:function(t,e=""){return this.get(t)||e}};

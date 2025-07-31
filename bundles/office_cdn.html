@@ -1,31 +1,102 @@
+<!-------------------------🦩 Creatifornia 🦩------------------------>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Creatifornia/offices-api-v1-1.js" defer></script>
+<!-- 💼 Offices.get 💼 -->
+<script>
+const CRUCIAL_PATHS = [
+    'country.currency.ISO_4217',
+    'club.plan_id',
+    'country.lang.ISO_639',
+    'country.ISO_3166_1_alfa_2'
+];
+
+const MAX_RETRIES = 10;
+const RETRY_INTERVAL = 200;
+const CACHE_KEY = 'offices';
+
+class Offices {
+    constructor() {
+        this._cache = null;
+        this._isReady = false;
+        this._retryCount = 0;
+        // Escuchar directamente el evento offices-ready
+        document.addEventListener('offices-ready', () => this._loadData());
+    }
+
+    _loadData() {
+        try {
+            const data = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+            
+            if (this._verifyData(data)) {
+                this._cache = data;
+                this._isReady = true;
+                document.dispatchEvent(new Event('creatifornia-ready'));
+            } else if (this._retryCount < MAX_RETRIES) {
+                this._retryCount++;
+                setTimeout(() => this._loadData(), RETRY_INTERVAL);
+            } else {
+                throw new Error('Datos críticos no disponibles después de reintentos');
+            }
+        } catch (error) {
+            console.error('Offices Error:', error);
+            document.dispatchEvent(new Event('offices-cache-error'));
+        }
+    }
+
+    _verifyData(data) {
+        return CRUCIAL_PATHS.every(path => {
+            const value = path.split('.').reduce((obj, key) => obj?.[key], data);
+            return value !== undefined && value !== null && value !== '';
+        });
+    }
+
+    get(path) {
+        if (!this._isReady) {
+            console.warn('Offices: Los datos no están listos');
+            return null;
+        }
+        return path.split('.').reduce((obj, key) => obj?.[key], this._cache);
+    }
+}
+
+// Inicialización automática al cargar el script
+window.Offices = new Offices();
+</script>
+
+
 <!-------------------------🦜 Data 🦜-------------------------> 
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/offices.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/options.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/dynamic-text.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/translate.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/data-api-v1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/events-data-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Options-API-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Dynamic-API-v1-1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Dynamic-Cache.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Data-API.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Data-API-Cache.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Translate-API-v1-1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Translate-Cache.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Events-Data.js" defer></script>
+
 
 <!------------------------🐳 Fill  🐳 ------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-text.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/direct-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/events-fill.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Text.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Inputs.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Direct.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Events-Fill.js" defer></script>
 
-<!------------------------🧱 Builders 🧱---------------------->
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/options.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/currency.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/keywords.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/url-friendly-v1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/events-builders.js" defer></script>
+
+<!------------------------🧱 Components 🧱---------------------->
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Options.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Keywords.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Currency-v1-1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Friendly-URL-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Plan-Calculator-v1-2.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Events-Components.js" defer></script>
+
 
 <!----------------------- ⚡ Form ⚡ ------------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Form/form-submit.js" defer></script>
 
 <!------------------------🙉 Display 🙉 ---------------------->
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/translation.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/display.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/events-display-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/Translate-Binding.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/Display.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/Events-Display.js" defer></script>
 
 
 <!------------------------🐇 Handlers 🐇---------------------->
@@ -43,47 +114,17 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/universal-emojis.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/reset-tabs.js" defer></script>
 
-<!----------------------- 🐬 .get('') 🐬 ---------------------->
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/window-data/DynamicText.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/window-data/OfficesText.js" defer></script>
 
 <!----------------------- 🐞 Uploadcare 🐞  ------------------>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
-<script type="module">
-  import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
-  import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
-  import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
+<script src="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Uploadcare/Function-v1.js" defer></script>
 
-  // Función para inicializar UploadCare con el locale correcto
-  const initUploadCare = () => {
-    try {
-      const lang = window.OfficesText?.get('country.lang.ISO_639') || 'es'; // Safe access with optional chaining
-      
-      if (lang === 'es') {
-        UC.defineLocale('es', es);
-      } else {
-        UC.defineLocale('en', en); // Default to English for any non-Spanish language
-      }
 
-      UC.defineComponents(UC);
-    } catch (error) {
-      console.error('Error initializing UploadCare:', error);
-      // Fallback to Spanish if any error occurs
-      UC.defineLocale('es', es);
-      UC.defineComponents(UC);
-    }
-  };
 
-  // Esperar a que los textos dinámicos estén listos
-  if (window.DynamicText && window.OfficesText) {
-    document.addEventListener('dynamic_text-ready', initUploadCare);
-  } else {
-    // Cargar con valores por defecto si no existe el sistema de textos
-    console.warn('DynamicText/OfficesText no disponibles, cargando UploadCare con español por defecto');
-    UC.defineLocale('es', es);
-    UC.defineComponents(UC);
-  }
-</script>
+
 <!------------------------🐸 HTML 🐸-------------------------->
 <!-- MODAL response error -->
 <div id="error-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
@@ -96,139 +137,4 @@
     </div>
   </div>
 
-<style>
-/* Estilo para inhabilitar elementos */
-.inutil {
-    pointer-events: none !important;
-    user-select: none !important;
-    cursor: not-allowed !important;
-}
-</style>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Buscar todos los componentes plan_calculator
-    const planCalculators = document.querySelectorAll('[plan_calculator]');
-    
-    // Obtener datos de oficina desde localStorage
-    const offices = JSON.parse(localStorage.getItem('offices') || '{}');
-    const currency = offices?.country?.currency?.ISO_4217;
-    
-    if (!currency) {
-        console.error('No se pudo obtener la moneda desde localStorage');
-        return;
-    }
-
-    planCalculators.forEach(calculator => {
-        // Obtener atributos del componente
-        const planId = calculator.getAttribute('plan_id');
-        const limit = parseInt(calculator.getAttribute('limit') || 5);
-        const jsonPath = calculator.getAttribute('json-path');
-        const clickThisId = calculator.getAttribute('click_this');
-        
-        // Obtener elementos internos
-        const symbolElement = calculator.querySelector('[symbol]');
-        const currencyElement = calculator.querySelector('[currency]');
-        const unitElement = calculator.querySelector('[first_unit][second_unit]');
-        const storageBaseElement = calculator.querySelector('[storage_base]');
-        const storageUnitElement = calculator.querySelector('[storage_unit]');
-        const decreaseButton = calculator.querySelector('[cf="disminuir"]')?.closest('a');
-        const increaseButton = calculator.querySelector('[cf="aumentar"]')?.closest('a');
-        const clickTrigger = calculator.querySelector('[cf-click-trigger]');
-        
-        // Asignar la moneda obtenida al elemento en pantalla
-        if (currencyElement) {
-            currencyElement.textContent = currency;
-        }
-
-        // Obtener datos del plan desde localStorage
-        const data = JSON.parse(localStorage.getItem('data'));
-        const planData = data?.scalable_plans?.[planId]?.[currency];
-        
-        if (!planData) {
-            console.error(`Plan data not found for ID: ${planId} and currency: ${currency}`);
-            return;
-        }
-        
-        // Configurar elementos estáticos
-        if (symbolElement) {
-            symbolElement.textContent = planData.symbol;
-        }
-        
-        if (storageUnitElement) {
-            storageUnitElement.textContent = storageUnitElement.getAttribute('storage_unit');
-        }
-        
-        // Configurar valores iniciales
-        const storageBase = parseInt(storageBaseElement?.getAttribute('storage_base') || '200');
-        const firstUnit = parseFloat(planData.raw_value_1);
-        const secondUnit = parseFloat(planData.raw_value_second_unit);
-        let currentLevel = 1;
-        let currentUnit = firstUnit;
-        
-        // Crear input hidden
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = jsonPath;
-        hiddenInput.setAttribute('cf-json-path', jsonPath);
-        hiddenInput.setAttribute('data-required', 'true');
-        hiddenInput.value = currentLevel;
-        calculator.appendChild(hiddenInput);
-        
-        // Función para actualizar UI
-        function updateUI() {
-            // Actualizar almacenamiento
-            if (storageBaseElement) {
-                storageBaseElement.textContent = storageBase * currentLevel;
-            }
-            
-            // Actualizar precio unitario
-            if (unitElement) {
-                unitElement.textContent = planData.symbol + currentUnit.toFixed(2);
-            }
-            
-            // Actualizar estado del botón disminuir
-            if (decreaseButton) {
-                decreaseButton.classList.toggle('inutil', currentLevel === 1);
-            }
-        }
-        
-        // Configurar eventos de botones
-        if (decreaseButton) {
-            decreaseButton.addEventListener('click', function(e) {
-                e.preventDefault();
-                if (currentLevel > 1) {
-                    currentLevel--;
-                    currentUnit = (currentLevel === 1) ? firstUnit : (currentUnit - secondUnit);
-                    updateUI();
-                }
-            });
-        }
-        
-        if (increaseButton) {
-            increaseButton.addEventListener('click', function(e) {
-                e.preventDefault();
-                if (currentLevel < limit) {
-                    currentLevel++;
-                    currentUnit += secondUnit;
-                    updateUI();
-                } else if (currentLevel === limit && clickThisId) {
-                    // Disparar evento en el elemento click_this sin cambiar el nivel
-                    document.getElementById(clickThisId)?.click();
-                }
-            });
-        }
-        
-        // Configurar clickTrigger si existe
-        if (clickTrigger && clickThisId) {
-            clickTrigger.addEventListener('click', function(e) {
-                e.preventDefault();
-                document.getElementById(clickThisId)?.click();
-            });
-        }
-        
-        // Inicializar UI
-        updateUI();
-    });
-});
-</script>

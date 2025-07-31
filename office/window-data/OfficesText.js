@@ -1,1 +1,0 @@
-window.Offices={get:function(e){try{return JSON.parse(localStorage.getItem("offices")||"{}")[e]}catch(e){return void console.error("Error al leer offices:",e)}},getWithDefault:function(e,r=""){return this.get(e)||r}};
