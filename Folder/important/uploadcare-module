@@ -1,0 +1,55 @@
+<!--------------------- 🐞 Uploadcare 🐞  ---------------------> actualizar
+ 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
+
+<script type="module">
+  import * as UC from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/file-uploader.min.js';
+  import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
+  import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
+
+  // Función para inicializar UploadCare con el locale correcto
+  const initUploadCare = () => {
+    try {
+      const lang = window.Offices.get('country.lang.ISO_639') || 'es';
+      
+      if (lang === 'es') {
+        UC.defineLocale('es', es);
+      } else {
+        UC.defineLocale('en', en);
+      }
+
+      UC.defineComponents(UC);
+      
+      // Disparar evento de finalización
+      document.dispatchEvent(new Event('uploadcare-ready'));
+      console.log('Uploadcare initialized successfully');
+      
+    } catch (error) {
+      console.error('Error initializing UploadCare:', error);
+      // Fallback a español si ocurre algún error
+      UC.defineLocale('es', es);
+      UC.defineComponents(UC);
+      
+      // Disparar evento incluso en caso de error (pero marcado como fallo)
+      const errorEvent = new CustomEvent('uploadcare-ready', {
+        detail: { error: true, message: error.message }
+      });
+      document.dispatchEvent(errorEvent);
+    }
+  };
+
+  // Esperar a que los textos dinámicos estén listos
+  if (window.Dynamic && window.OfficesText) {
+    document.addEventListener('data-ready', initUploadCare);
+  } else {
+    // Cargar con valores por defecto si no existe el sistema de textos
+    console.warn('Dynamic/OfficesText no disponibles, cargando UploadCare con español por defecto');
+    UC.defineLocale('es', es);
+    UC.defineComponents(UC);
+    
+    // Disparar evento de inicialización por defecto
+    setTimeout(() => {
+      document.dispatchEvent(new Event('uploadcare-ready'));
+    }, 100);
+  }
+</script>

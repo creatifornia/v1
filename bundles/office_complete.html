@@ -1,6 +1,6 @@
-<!-------------------------🦜 Data 🦜------------------------>
+<!-------------------------🦜 Creatifornia 🦜------------------------>
 
-<!-- 🦜 Offices  🦜 -->
+<!-- 🦜 Offices  🦜 ACTUALIZAAAAAAAAAAAAAAAAAAAR -->
 <script type="text/javascript">
   document.addEventListener("DOMContentLoaded", initCreatifornia);
   document.addEventListener("get-creatifornia", initCreatifornia);
@@ -17,7 +17,7 @@
           console.log("💼 Office ");
 
           // ✅ Disparar evento cuando se ha guardado exitosamente
-          document.dispatchEvent(new Event("creatifornia-ready"));
+          document.dispatchEvent(new Event("offices-ready"));
         }
       }).catch(error => {
         console.error("❌ Error al obtener datos de Creatifornia:", error);
@@ -26,148 +26,173 @@
   }
 </script>
 
-<!-- 🦧 Options  🦧 -->
-<script type="text/javascript">
-  document.addEventListener("creatifornia-ready", initOptions);
-  
-  // Versión actual del sistema - ACTUALIZAR ESTO CON CADA CAMBIO
-  const CURRENT_SYSTEM_VERSION = 'v1.0';
 
-  function initOptions() {
+<!-- 🚀 Offices-cache (AGREGAAAAAAAAAAAAAAAAR)🚀 --> 
+<script>
+const CRUCIAL_PATHS = [
+    'country.currency.ISO_4217',
+    'club.plan_id',
+    'country.lang.ISO_639',
+    'country.ISO_3166_1_alfa_2'
+    // Añadir más paths críticos aquí
+];
+
+const MAX_RETRIES = 10;            // Máximo de reintentos
+const RETRY_INTERVAL = 200;       // Intervalo entre reintentos (ms)
+const CACHE_KEY = 'offices';      // Clave para localStorage
+// ============================= //
+
+class Offices {
+    constructor() {
+        this._cache = null;
+        this._isReady = false;
+        this._retryCount = 0;
+    }
+
+    init() {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.addEventListener('offices-ready', () => this._loadData());
+            document.addEventListener('clear-cache', () => this._clearCache());
+        });
+    }
+
+    _loadData() {
+        try {
+            const data = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+            
+            if (this._verifyData(data)) {
+                this._cache = data;
+                this._isReady = true;
+                document.dispatchEvent(new Event('creatifornia-ready'));
+            } else if (this._retryCount < MAX_RETRIES) {
+                this._retryCount++;
+                setTimeout(() => this._loadData(), RETRY_INTERVAL);
+            } else {
+                throw new Error('Datos críticos no disponibles después de reintentos');
+            }
+        } catch (error) {
+            console.error('Offices Error:', error);
+            document.dispatchEvent(new Event('offices-cache-error'));
+        }
+    }
+
+    _verifyData(data) {
+        return CRUCIAL_PATHS.every(path => {
+            const value = path.split('.').reduce((obj, key) => obj?.[key], data);
+            return value !== undefined && value !== null && value !== '';
+        });
+    }
+
+    _clearCache() {
+        this._cache = null;
+        this._isReady = false;
+        this._retryCount = 0;
+        document.dispatchEvent(new Event('reloading-cache'));
+        this._loadData();
+    }
+
+    get(path) {
+        if (!this._isReady) {
+            console.warn('Offices: Los datos no están listos');
+            return null;
+        }
+        return path.split('.').reduce((obj, key) => obj?.[key], this._cache);
+    }
+}
+
+// Inicialización
+window.Offices = new Offices();
+Offices.init();
+
+</script>
+
+
+
+<!-------------------------🦜 Data 🦜------------------------>
+
+
+
+<!-- 🦧 Options System (Optimized) 🦧 -->
+<script type="text/javascript">
+document.addEventListener("offices-cache-ready", initOptions);
+
+// Versión actual del sistema - ACTUALIZAR CON CAMBIOS
+const CURRENT_SYSTEM_VERSION = 'v1.0';
+
+function initOptions() {
     const authToken = localStorage.getItem("AuthToken");
     const existingOptions = localStorage.getItem("options");
     
-    // Verificar si se fuerza refresco con parámetro ?update
-    const urlParams = new URLSearchParams(window.location.search);
-    const forceRefresh = urlParams.has('update');
+    // Verificar parámetro ?update en URL
+    const forceRefresh = new URLSearchParams(window.location.search).has('update');
     
     if (forceRefresh && existingOptions) {
-      console.log("🔄 Refresh by URL");
-      localStorage.removeItem("options");
+        console.log("🔄 Refresh by URL");
+        localStorage.removeItem("options");
     }
     
-    // 1. Verificar si existen opciones con versión actual
+    // 1. Validar opciones existentes
     if (existingOptions && !forceRefresh) {
-      try {
-        const parsedOptions = JSON.parse(existingOptions);
-        
-        // Buscar la versión en las opciones almacenadas
-        const storedVersion = parsedOptions.version;
-        
-        if (storedVersion === CURRENT_SYSTEM_VERSION) {
-          document.dispatchEvent(new Event("options-ready"));
-          console.log("🦧 Options");
-          return;
-        }
-        
-        // Si la versión no coincide, eliminar para forzar nueva descarga
-        localStorage.removeItem("options");
-      } catch (e) {
-        console.warn("Corrupted options, refreshing...");
-        localStorage.removeItem("options");
-      }
-    }
-
-    // 2. Solo continuar si no tenemos opciones actualizadas
-    if (authToken) {
-      xano.setAuthToken(authToken);
-      
-      // Funciones de transformación (solo para categorías)
-      const transformOptions = (optionsArray) => {
-        return optionsArray.reduce((acc, item) => {
-          const key = Object.keys(item)[0];
-          acc[key] = item[key];
-          return acc;
-        }, {});
-      };
-      
-      const optimizeOptionsStructure = (optionsObj) => {
-        return Object.fromEntries(
-          Object.entries(optionsObj).map(([category, items]) => {
-            // Solo aplicar transformación si es un array (categoría)
-            if (!Array.isArray(items)) return [category, items];
-            
-            const optionsItem = items.find(item => item.options);
-            const messageItem = items.find(item => item.message);
-            
-            return [
-              category,
-              {
-                options: optionsItem?.options || [],
-                message: messageItem?.message || 'Elige una opción'
-              }
-            ];
-          })
-        );
-      };
-
-      // Función de reintentos para obtener parámetros
-      const getParamsWithRetry = (attempt = 0) => {
-        const maxAttempts = 30;
-        const retryDelay = 50;
-        
-        const offices = JSON.parse(localStorage.getItem("offices") || "{}");
-        const lang = offices.country?.lang?.ISO_639;
-        const countryCode = offices.country?.ISO_3166_1_alfa_2;
-        
-        if ((lang && countryCode) || attempt >= maxAttempts) {
-          const finalLang = lang || 'es';
-          const finalCountry = countryCode || 'MX';
-          return { lang: finalLang, country: finalCountry };
-        }
-        
-        return new Promise(resolve => {
-          setTimeout(() => {
-            resolve(getParamsWithRetry(attempt + 1));
-          }, retryDelay);
-        });
-      };
-
-      // 3. Proceso de descarga y almacenamiento
-      (async () => {
         try {
-          const { lang, country } = await getParamsWithRetry();
-          const apiUrl = `/options?lang=${lang}&country=${country}`;
-          
-          const response = await xano.get(apiUrl);
-          if (response?.body) {
-            // Separar elementos de categoría y no-categoría
-            const nonCategoryItems = {};
-            const categoryItems = [];
-            
-            response.body.forEach(item => {
-              const key = Object.keys(item)[0];
-              // Elementos no-categoría (como version)
-              if (!Array.isArray(item[key])) {
-                nonCategoryItems[key] = item[key];
-              } 
-              // Elementos categoría
-              else {
-                categoryItems.push(item);
-              }
-            });
-            
-            // Aplicar transformaciones solo a categorías
-            const transformedCategories = transformOptions(categoryItems);
-            const optimizedCategories = optimizeOptionsStructure(transformedCategories);
-            
-            // Combinar todo manteniendo la estructura original
-            const finalOptions = {
-              ...nonCategoryItems,
-              ...optimizedCategories
-            };
-            
-            // Guardar en localStorage SIN MODIFICACIONES ADICIONALES
-            localStorage.setItem("options", JSON.stringify(finalOptions));
-            console.log(`🦧 Options ${CURRENT_SYSTEM_VERSION}`);
-            document.dispatchEvent(new Event("options-ready"));
-          }
-        } catch (error) {
-          console.error("❌ Options error:", error);
+            const parsedOptions = JSON.parse(existingOptions);
+            if (parsedOptions.version === CURRENT_SYSTEM_VERSION) {
+                document.dispatchEvent(new Event("options-ready"));
+                console.log("🦧 Options (Cached)");
+                return;
+            }
+            localStorage.removeItem("options");
+        } catch (e) {
+            console.warn("Corrupted options, refreshing...");
+            localStorage.removeItem("options");
         }
-      })();
     }
-  }
+
+    // 2. Descargar nuevas opciones si hay token
+    if (authToken) {
+        xano.setAuthToken(authToken);
+        
+        const transformStructure = (options) => ({
+            ...Object.fromEntries(
+                Object.entries(options)
+                    .filter(([_, value]) => !Array.isArray(value))
+            ),
+            ...Object.fromEntries(
+                Object.entries(options)
+                    .filter(([_, value]) => Array.isArray(value))
+                    .map(([category, items]) => [
+                        category,
+                        {
+                            options: items.find(i => i.options)?.options || [],
+                            message: items.find(i => i.message)?.message || 'Elige una opción'
+                        }
+                    ])
+            )
+        });
+
+        (async () => {
+            try {
+                // Obtener parámetros DIRECTAMENTE de Offices
+                const lang = Offices.get('country.lang.ISO_639') || 'es';
+                const country = Offices.get('country.ISO_3166_1_alfa_2') || 'MX';
+                
+                const response = await xano.get(`/options?lang=${lang}&country=${country}`);
+                
+                if (response?.body) {
+                    const finalOptions = {
+                        ...transformStructure(response.body),
+                        version: CURRENT_SYSTEM_VERSION
+                    };
+                    
+                    localStorage.setItem("options", JSON.stringify(finalOptions));
+                    console.log(`🦧 Options ${CURRENT_SYSTEM_VERSION}`);
+                    document.dispatchEvent(new Event("options-ready"));
+                }
+            } catch (error) {
+                console.error("❌ Options error:", error);
+            }
+        })();
+    }
+}
 </script>
 
 <!-- 📘 Dynamic_text 📘 -->
@@ -399,13 +424,93 @@
   }
 </script>
 
+<!-- 📦 Data API -->
+  <script type="text/javascript">
+  document.addEventListener("creatifornia-ready", fetchData);
 
-<!--⏰ events (Data) delay ⏰ -->
-<script>
+  const CURRENT_DATA_VERSION = 'v1.0';
+
+  function fetchData() {
+    (async () => {
+      const authToken = localStorage.getItem("AuthToken");
+      const existingData = localStorage.getItem("data");
+      
+      // Verificar parámetro de actualización
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceRefresh = urlParams.has('update');
+      
+      if (forceRefresh && existingData) {
+        console.log("📦 Data API by URL");
+        localStorage.removeItem("data");
+      }
+      
+      // Verificar cache
+      if (existingData && !forceRefresh) {
+        try {
+          const parsedData = JSON.parse(existingData);
+          if (parsedData.version === CURRENT_DATA_VERSION) {
+            document.dispatchEvent(new Event("data-api-ready")); 
+            console.log("📦 Data API");
+            return;
+          }
+          localStorage.removeItem("data");
+        } catch (e) {
+          console.warn("Corrupted data, refreshing...");
+          localStorage.removeItem("data");
+        }
+      }
+
+      if (authToken) {
+        xano.setAuthToken(authToken);
+        
+        try {
+          const response = await xano.get('/data');
+          if (response?.body) {
+            // Función para limpiar la estructura
+            const cleanStructure = (data) => {
+              if (Array.isArray(data)) {
+                // Convertir array a objeto manteniendo las claves originales
+                let result = {};
+                data.forEach(item => {
+                  if (typeof item === 'object' && item !== null) {
+                    Object.keys(item).forEach(key => {
+                      result[key] = cleanStructure(item[key]);
+                    });
+                  }
+                });
+                return result;
+              } else if (typeof data === 'object' && data !== null) {
+                let result = {};
+                Object.keys(data).forEach(key => {
+                  result[key] = cleanStructure(data[key]);
+                });
+                return result;
+              }
+              return data;
+            };
+            
+            const cleanedData = cleanStructure(response.body);
+            cleanedData.version = CURRENT_DATA_VERSION;
+            
+            localStorage.setItem("data", JSON.stringify(cleanedData));
+            console.log(`📦 Data API (${CURRENT_DATA_VERSION})`);
+            document.dispatchEvent(new Event("data-api-ready"));
+          }
+        } catch (error) {
+          console.error("❌ Data fetch error:", error);
+        }
+      }
+    })();
+  }
+</script>
+
+<!--⏰ events (Data) delay ⏰ --> 
+<script> //añadir dvento de actualizar cache si es necesario
   (function() {
     const REQUIRED_EVENTS = [
       "options-ready",
       "dynamic_text-ready",
+      "data-api-ready"
     ];
 
     let receivedEvents = new Set();
@@ -435,9 +540,7 @@
       });
     });
   })();
-</script>
-
-
+</script> 
 
 
 

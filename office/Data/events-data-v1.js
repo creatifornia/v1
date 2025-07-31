@@ -1,1 +1,0 @@
-!function(){const e=["options-ready","dynamic_text-ready","data-api-ready"];let t=new Set,a=null;function n(){e.every((e=>t.has(e)))&&(clearTimeout(a),a=setTimeout((()=>{console.log("⏰ Data"),document.dispatchEvent(new Event("data-ready")),t.clear()}),200))}e.forEach((e=>{document.addEventListener(e,(()=>{t.has(e)||(t.add(e),n())}))}))}();

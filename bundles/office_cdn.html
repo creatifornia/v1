@@ -3,15 +3,14 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/options.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/dynamic-text.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/translate.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/events-data.js" defer></script>
-
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/data-api-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/events-data-v1.js" defer></script>
 
 <!------------------------🐳 Fill  🐳 ------------------------>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-text.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/fill-inputs.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/direct-inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/events-fill.js" defer></script> //cambiar
-
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/events-fill.js" defer></script>
 
 <!------------------------🧱 Builders 🧱---------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/options.js" defer></script>
@@ -20,13 +19,11 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/url-friendly-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Builders/events-builders.js" defer></script>
 
-
 <!----------------------- ⚡ Form ⚡ ------------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Form/form-submit.js" defer></script>
 
-
 <!------------------------🙉 Display 🙉 ---------------------->
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/translation.js" defer></script> //cambiar
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/translation.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/display.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Display/events-display-v1.js" defer></script>
 
@@ -35,7 +32,6 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Handlers/options-handler.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Handlers/options-checkbox.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Handlers/options-radio.js" defer></script>
-
 
 <!----------------------- 🐬 Tools 🐬 ------------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/loader.js" defer></script>
@@ -47,11 +43,9 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/universal-emojis.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Tools/reset-tabs.js" defer></script>
 
-
 <!----------------------- 🐬 .get('') 🐬 ---------------------->
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/window-data/DynamicText.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/window-data/OfficesText.js" defer></script>
-
 
 <!----------------------- 🐞 Uploadcare 🐞  ------------------>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
@@ -90,8 +84,6 @@
     UC.defineComponents(UC);
   }
 </script>
-
-
 <!------------------------🐸 HTML 🐸-------------------------->
 <!-- MODAL response error -->
 <div id="error-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
@@ -104,83 +96,139 @@
     </div>
   </div>
 
+<style>
+/* Estilo para inhabilitar elementos */
+.inutil {
+    pointer-events: none !important;
+    user-select: none !important;
+    cursor: not-allowed !important;
+}
+</style>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Buscar todos los componentes plan_calculator
+    const planCalculators = document.querySelectorAll('[plan_calculator]');
+    
+    // Obtener datos de oficina desde localStorage
+    const offices = JSON.parse(localStorage.getItem('offices') || '{}');
+    const currency = offices?.country?.currency?.ISO_4217;
+    
+    if (!currency) {
+        console.error('No se pudo obtener la moneda desde localStorage');
+        return;
+    }
 
-  <script type="text/javascript">
-  document.addEventListener("creatifornia-ready", fetchData);
-
-  const CURRENT_DATA_VERSION = 'v1.0';
-
-  function fetchData() {
-    (async () => {
-      const authToken = localStorage.getItem("AuthToken");
-      const existingData = localStorage.getItem("data");
-      
-      // Verificar parámetro de actualización
-      const urlParams = new URLSearchParams(window.location.search);
-      const forceRefresh = urlParams.has('update');
-      
-      if (forceRefresh && existingData) {
-        console.log("📦 Data API by URL");
-        localStorage.removeItem("data");
-      }
-      
-      // Verificar cache
-      if (existingData && !forceRefresh) {
-        try {
-          const parsedData = JSON.parse(existingData);
-          if (parsedData.version === CURRENT_DATA_VERSION) {
-            document.dispatchEvent(new Event("data-api-ready")); 
-            console.log("📦 Data API");
-            return;
-          }
-          localStorage.removeItem("data");
-        } catch (e) {
-          console.warn("Corrupted data, refreshing...");
-          localStorage.removeItem("data");
-        }
-      }
-
-      if (authToken) {
-        xano.setAuthToken(authToken);
+    planCalculators.forEach(calculator => {
+        // Obtener atributos del componente
+        const planId = calculator.getAttribute('plan_id');
+        const limit = parseInt(calculator.getAttribute('limit') || 5);
+        const jsonPath = calculator.getAttribute('json-path');
+        const clickThisId = calculator.getAttribute('click_this');
         
-        try {
-          const response = await xano.get('/data');
-          if (response?.body) {
-            // Función para limpiar la estructura
-            const cleanStructure = (data) => {
-              if (Array.isArray(data)) {
-                // Convertir array a objeto manteniendo las claves originales
-                let result = {};
-                data.forEach(item => {
-                  if (typeof item === 'object' && item !== null) {
-                    Object.keys(item).forEach(key => {
-                      result[key] = cleanStructure(item[key]);
-                    });
-                  }
-                });
-                return result;
-              } else if (typeof data === 'object' && data !== null) {
-                let result = {};
-                Object.keys(data).forEach(key => {
-                  result[key] = cleanStructure(data[key]);
-                });
-                return result;
-              }
-              return data;
-            };
-            
-            const cleanedData = cleanStructure(response.body);
-            cleanedData.version = CURRENT_DATA_VERSION;
-            
-            localStorage.setItem("data", JSON.stringify(cleanedData));
-            console.log(`📦 Data API (${CURRENT_DATA_VERSION})`);
-            document.dispatchEvent(new Event("data-api-ready"));
-          }
-        } catch (error) {
-          console.error("❌ Data fetch error:", error);
+        // Obtener elementos internos
+        const symbolElement = calculator.querySelector('[symbol]');
+        const currencyElement = calculator.querySelector('[currency]');
+        const unitElement = calculator.querySelector('[first_unit][second_unit]');
+        const storageBaseElement = calculator.querySelector('[storage_base]');
+        const storageUnitElement = calculator.querySelector('[storage_unit]');
+        const decreaseButton = calculator.querySelector('[cf="disminuir"]')?.closest('a');
+        const increaseButton = calculator.querySelector('[cf="aumentar"]')?.closest('a');
+        const clickTrigger = calculator.querySelector('[cf-click-trigger]');
+        
+        // Asignar la moneda obtenida al elemento en pantalla
+        if (currencyElement) {
+            currencyElement.textContent = currency;
         }
-      }
-    })();
-  }
+
+        // Obtener datos del plan desde localStorage
+        const data = JSON.parse(localStorage.getItem('data'));
+        const planData = data?.scalable_plans?.[planId]?.[currency];
+        
+        if (!planData) {
+            console.error(`Plan data not found for ID: ${planId} and currency: ${currency}`);
+            return;
+        }
+        
+        // Configurar elementos estáticos
+        if (symbolElement) {
+            symbolElement.textContent = planData.symbol;
+        }
+        
+        if (storageUnitElement) {
+            storageUnitElement.textContent = storageUnitElement.getAttribute('storage_unit');
+        }
+        
+        // Configurar valores iniciales
+        const storageBase = parseInt(storageBaseElement?.getAttribute('storage_base') || '200');
+        const firstUnit = parseFloat(planData.raw_value_1);
+        const secondUnit = parseFloat(planData.raw_value_second_unit);
+        let currentLevel = 1;
+        let currentUnit = firstUnit;
+        
+        // Crear input hidden
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = jsonPath;
+        hiddenInput.setAttribute('cf-json-path', jsonPath);
+        hiddenInput.setAttribute('data-required', 'true');
+        hiddenInput.value = currentLevel;
+        calculator.appendChild(hiddenInput);
+        
+        // Función para actualizar UI
+        function updateUI() {
+            // Actualizar almacenamiento
+            if (storageBaseElement) {
+                storageBaseElement.textContent = storageBase * currentLevel;
+            }
+            
+            // Actualizar precio unitario
+            if (unitElement) {
+                unitElement.textContent = planData.symbol + currentUnit.toFixed(2);
+            }
+            
+            // Actualizar estado del botón disminuir
+            if (decreaseButton) {
+                decreaseButton.classList.toggle('inutil', currentLevel === 1);
+            }
+        }
+        
+        // Configurar eventos de botones
+        if (decreaseButton) {
+            decreaseButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (currentLevel > 1) {
+                    currentLevel--;
+                    currentUnit = (currentLevel === 1) ? firstUnit : (currentUnit - secondUnit);
+                    updateUI();
+                }
+            });
+        }
+        
+        if (increaseButton) {
+            increaseButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (currentLevel < limit) {
+                    currentLevel++;
+                    currentUnit += secondUnit;
+                    updateUI();
+                } else if (currentLevel === limit && clickThisId) {
+                    // Disparar evento en el elemento click_this sin cambiar el nivel
+                    document.getElementById(clickThisId)?.click();
+                }
+            });
+        }
+        
+        // Configurar clickTrigger si existe
+        if (clickTrigger && clickThisId) {
+            clickTrigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.getElementById(clickThisId)?.click();
+            });
+        }
+        
+        // Inicializar UI
+        updateUI();
+    });
+});
 </script>

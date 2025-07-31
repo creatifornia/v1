@@ -1,0 +1,1 @@
+!function(){const e=["options-builder-ready","keywords-builder-ready","currency-builder-ready","url-builder-ready","plan-calculator-ready"];let n=new Set;function r(){e.every((e=>n.has(e)))&&(console.log("⏰ Components"),document.dispatchEvent(new Event("inputs-ready")),n.clear())}e.forEach((e=>{document.addEventListener(e,(()=>{n.has(e)||(n.add(e),r())}))}))}();
