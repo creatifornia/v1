@@ -1,1 +1,0 @@
-!function(){const e=["fill-text-ready","fill-inputs-ready","direct-inputs-ready"];let t=new Set;function n(){e.every((e=>t.has(e)))&&(console.log("⏰ Fill"),document.dispatchEvent(new Event("fill-ready")),t.clear())}e.forEach((e=>{document.addEventListener(e,(()=>{t.has(e)||(t.add(e),n())}))}))}();
