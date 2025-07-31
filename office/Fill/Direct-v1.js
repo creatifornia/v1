@@ -1,0 +1,1 @@
+document.addEventListener("data-ready",(()=>{const e=document.querySelectorAll("[cf-direct-input]");e.forEach((e=>{e.value=e.getAttribute("cf-direct-input"),e.dispatchEvent(new Event("input",{bubbles:!0}))})),document.dispatchEvent(new Event("direct-inputs-ready")),console.log("🔥 Direct (ready) - Elementos procesados:",e.length)}));
