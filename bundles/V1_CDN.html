@@ -1,5 +1,5 @@
 <!-------------------------🦩 Data 🦩------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Offices.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Offices-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Options.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Dynamic.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/DataAPI.js" defer></script>
@@ -8,7 +8,7 @@
 
 <!------------------------🐳 Fill  🐳 ------------------------>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Text.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Inputs.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Inputs-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Direct.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Events.js" defer></script>
 
@@ -16,8 +16,8 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Options.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Keywords.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Currency.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/FriendlyURL.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/PlanCalculator.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/FriendlyURL-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/PlanCalculator-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Events.js" defer></script>
 
 
@@ -44,7 +44,7 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Tools/Click.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Tools/Refresh.js" defer></script>
 
- <!--------------------- 🐞 Uploadcare 🐞  ---------------------> 
+ <!--------------------- 🐞 Uploadcare 🐞  --------------------->
  
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
 
@@ -53,10 +53,26 @@
   import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
   import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
 
+
+document.addEventListener('DOMContentLoaded', () => {
+
+ // Función segura para obtener valores desde localStorage.offices
+        function getOffices(path) {
+            try {
+                const data = JSON.parse(localStorage.getItem("offices") || "{}");
+                return path.split('.').reduce((acc, key) => acc?.[key], data);
+            } catch (e) {
+                console.error("❌ Error parsing offices from localStorage:", e);
+                return null;
+            }
+        }
+        
+ 
+
   // Función para inicializar UploadCare con el locale correcto
   const initUploadCare = () => {
     try {
-      const lang = window.Offices?.get('country.lang.ISO_639') || 'es';
+      const lang = getOffices('country.lang.ISO_639');
       
       if (lang === 'es') {
         UC.defineLocale('es', es);
@@ -68,7 +84,7 @@
       
       // Disparar evento de finalización
       document.dispatchEvent(new Event('uploadcare-ready'));
-      console.log('Uploadcare initialized successfully');
+      console.log('🐞 Uploadcare');
       
     } catch (error) {
       console.error('Error initializing UploadCare:', error);
@@ -83,25 +99,10 @@
       document.dispatchEvent(errorEvent);
     }
   };
-
-  // Esperar a que los textos dinámicos estén listos
-  if (window.Dynamic && window.OfficesText) {
-    document.addEventListener('data-ready', initUploadCare);
-  } else {
-    // Cargar con valores por defecto si no existe el sistema de textos
-    console.warn('Dynamic/OfficesText no disponibles, cargando UploadCare con español por defecto');
-    UC.defineLocale('es', es);
-    UC.defineComponents(UC);
-    
-    // Disparar evento de inicialización por defecto
-    setTimeout(() => {
-      document.dispatchEvent(new Event('uploadcare-ready'));
-    }, 100);
-  }
+});
 </script>
 
 <!---------------------🐸 HTML 🐸--------------------->
-
 
 <!-- 🐸 MODAL response error  🐸 -->
 
@@ -110,7 +111,7 @@
       <h2 style="margin-bottom:1rem; font-size:18px;">🔔</h2> <!-- Título más pequeño -->
       <p id="error-message" style="margin-bottom:2rem; font-size:20px; font-weight:bold;"></p> <!-- Mensaje más grande -->
       <button onclick="closeErrorModal()" style="background:#e5813e; color:#292626; border:none; padding:0.75rem 1.5rem; border-radius:0.5rem; cursor:pointer; font-weight:bold;">
-        Close
+        Cerrar
       </button>
     </div>
   </div>
