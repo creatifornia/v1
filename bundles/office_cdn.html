@@ -1,93 +1,237 @@
-<!-------------------------🦩 Creatifornia 🦩------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Creatifornia/offices-api-v1-1.js" defer></script>
-<!-- 💼 Offices.get 💼 -->
-<script>
-const CRUCIAL_PATHS = [
+<!-------------------------🦩 Data 🦩------------------------>
+<!-- 💼 Offices 💼 -->
+<script type="text/javascript">
+  const CRUCIAL_PATHS = [
     'country.currency.ISO_4217',
     'club.plan_id',
     'country.lang.ISO_639',
     'country.ISO_3166_1_alfa_2'
-];
+  ];
 
-const MAX_RETRIES = 10;
-const RETRY_INTERVAL = 200;
-const CACHE_KEY = 'offices';
+  const MAX_RETRIES = 10;
+  const RETRY_INTERVAL = 200; // ms
+  const WAIT_TIME_AFTER_FAILURE = 30000; // 30 seconds
 
-class Offices {
-    constructor() {
-        this._cache = null;
-        this._isReady = false;
-        this._retryCount = 0;
-        // Escuchar directamente el evento offices-ready
-        document.addEventListener('offices-ready', () => this._loadData());
+  document.addEventListener("DOMContentLoaded", initCreatifornia);
+  document.addEventListener("get-creatifornia", initCreatifornia);
+
+  function initCreatifornia() {
+    const authToken = localStorage.getItem("AuthToken");
+    if (!authToken) return;
+
+    xano.setAuthToken(authToken);
+    xano.get('/offices').then(response => {
+      if (response && response.body) {
+        localStorage.setItem("offices", JSON.stringify(response.body));
+        validateCrucialPaths(response.body, 0);
+      }
+    }).catch(error => {
+      console.error("❌ Error al obtener datos de Creatifornia:", error);
+    });
+  }
+
+  function validateCrucialPaths(data, attempt) {
+    if (allCrucialPathsExist(data)) {
+      console.log("💼 Offices");
+      document.dispatchEvent(new Event("creatifornia-ready"));
+      return;
     }
 
-    _loadData() {
-        try {
-            const data = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-            
-            if (this._verifyData(data)) {
-                this._cache = data;
-                this._isReady = true;
-                document.dispatchEvent(new Event('creatifornia-ready'));
-            } else if (this._retryCount < MAX_RETRIES) {
-                this._retryCount++;
-                setTimeout(() => this._loadData(), RETRY_INTERVAL);
-            } else {
-                throw new Error('Datos críticos no disponibles después de reintentos');
-            }
-        } catch (error) {
-            console.error('Offices Error:', error);
-            document.dispatchEvent(new Event('offices-cache-error'));
-        }
+    if (attempt < MAX_RETRIES) {
+      setTimeout(() => {
+        const storedData = JSON.parse(localStorage.getItem("offices") || "{}");
+        validateCrucialPaths(storedData, attempt + 1);
+      }, RETRY_INTERVAL);
+    } else {
+      console.warn("⚠️ Crucial paths no encontrados tras múltiples intentos. Esperando 30 segundos para reintentar.");
+      setTimeout(() => {
+        document.dispatchEvent(new Event("get-creatifornia"));
+      }, WAIT_TIME_AFTER_FAILURE);
     }
+  }
 
-    _verifyData(data) {
-        return CRUCIAL_PATHS.every(path => {
-            const value = path.split('.').reduce((obj, key) => obj?.[key], data);
-            return value !== undefined && value !== null && value !== '';
-        });
-    }
+  function allCrucialPathsExist(data) {
+    return CRUCIAL_PATHS.every(path => {
+      const value = getNestedValue(data, path);
+      return value !== undefined && value !== null;
+    });
+  }
 
-    get(path) {
-        if (!this._isReady) {
-            console.warn('Offices: Los datos no están listos');
-            return null;
-        }
-        return path.split('.').reduce((obj, key) => obj?.[key], this._cache);
-    }
-}
-
-// Inicialización automática al cargar el script
-window.Offices = new Offices();
+  function getNestedValue(obj, path) {
+    return path.split('.').reduce((acc, key) => {
+      return acc && acc[key] !== undefined ? acc[key] : undefined;
+    }, obj);
+  }
 </script>
 
+<!--⏰ data-ready ⏰ --> 
+<script> //añadir dvento de actualizar cache si es necesario
+  (function() {
+    const REQUIRED_EVENTS = [
+      "creatifornia-ready"
 
-<!-------------------------🦜 Data 🦜-------------------------> 
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Options-API-v1.js" defer></script>
+    ];
+
+    let receivedEvents = new Set();
+    let readyTimer = null;
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        clearTimeout(readyTimer); // Cancelar timer previo si existe
+        readyTimer = setTimeout(() => {
+          console.log("⏰🦩");
+          document.dispatchEvent(new Event("data-ready"));
+          resetCoordinator();
+        }, 300); 
+      }
+    }
+
+    function resetCoordinator() {
+      receivedEvents.clear();
+    }
+
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script> 
+
+
+
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Dynamic-API-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Dynamic-Cache-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Data-API.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Data-API-Cache-v1-2.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Translate-API-v1-1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/TTranslate-Cache-v1-3.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Translate-API-v1-2.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Translate-Cache-v1-3.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Data/Events-Data.js" defer></script>
 
 
 <!------------------------🐳 Fill  🐳 ------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Text.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Inputs.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Direct.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Events-Fill.js" defer></script>
+
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Inputs-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Direct-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Fill/Events-Fill-v1.js" defer></script>
 
 
 <!------------------------🧱 Components 🧱---------------------->
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Options.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Keywords-v1-2.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Currency-v1-1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Friendly-URL-v1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Plan-Calculator-v1-2.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/office/Components/Events-Components.js" defer></script>
+<script>
+document.addEventListener("data-ready", function () {
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+      return undefined;
+    }
+  }
+
+  const currencyCents = !!getCache('offices', 'country.currency.cents');
+  if (!currencyCents) {
+    document.dispatchEvent(new Event('plan-calculator-cents'));
+    return;
+  }
+
+  const planCalculators = document.querySelectorAll('[plan_calculator]');
+  const currency = getCache('offices', 'country.currency.ISO_4217');
+  const currencySymbol = getCache('offices', 'country.currency.symbol');
+
+  if (!currency) {
+    console.error('No se pudo obtener la moneda');
+    return;
+  }
+
+  planCalculators.forEach(calculator => {
+    const planId = calculator.getAttribute('plan_id');
+    const limit = parseInt(calculator.getAttribute('limit') || 5);
+    const jsonPath = calculator.getAttribute('json-path');
+    const clickThisId = calculator.getAttribute('click_this');
+
+    const firstUnit = parseFloat(getCache('data', `scalable_plans.${planId}.${currency}.raw_value_1`));
+    const secondUnit = parseFloat(getCache('data', `scalable_plans.${planId}.${currency}.raw_value_second_unit`));
+
+    if (isNaN(firstUnit) || isNaN(secondUnit)) {
+      console.error(`Datos incompletos o inválidos para plan ${planId} y moneda ${currency}`);
+      return;
+    }
+
+    const currencyElement = calculator.querySelector('[currency]');
+    const unitElement = calculator.querySelector('[first_unit][second_unit]');
+    const symbolElement = calculator.querySelector('[symbol]');
+    const StorageUnitElement = calculator.querySelector('[storage_unit]');
+    const StorageUnit = StorageUnitElement?.getAttribute('storage_unit');
+    const storageBaseElement = calculator.querySelector('[storage_base]');
+    const decreaseButton = calculator.querySelector('[cf="disminuir"]')?.closest('a');
+    const increaseButton = calculator.querySelector('[cf="aumentar"]')?.closest('a');
+
+    if (currencyElement) currencyElement.textContent = currency;
+    const storageBase = parseInt(storageBaseElement?.getAttribute('storage_base'));
+    let currentLevel = 1;
+    let currentAmount = firstUnit;
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = jsonPath;
+    hiddenInput.setAttribute('cf-json-path', jsonPath);
+    hiddenInput.setAttribute('data-required', 'true');
+    hiddenInput.value = currentLevel;
+    calculator.appendChild(hiddenInput);
+
+    function updateUI() {
+      if (storageBaseElement) {
+        storageBaseElement.textContent = storageBase * currentLevel;
+      }
+      if (unitElement) {
+        unitElement.textContent = `${currencySymbol}${currentAmount.toFixed(2)}`;
+      }
+      if (symbolElement) {
+        symbolElement.textContent = currencySymbol;
+      }
+      if (StorageUnitElement) {
+        StorageUnitElement.textContent = StorageUnit;
+      }
+      if (decreaseButton) {
+        decreaseButton.classList.toggle('inutil', currentLevel === 1);
+      }
+    }
+
+    if (decreaseButton) {
+      decreaseButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentLevel > 1) {
+          currentLevel--;
+          currentAmount = currentLevel === 1 ? firstUnit : currentAmount - secondUnit;
+          updateUI();
+        }
+      });
+    }
+
+    if (increaseButton) {
+      increaseButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentLevel < limit) {
+          currentLevel++;
+          currentAmount = currentAmount + secondUnit;
+          updateUI();
+        } else if (clickThisId) {
+          document.getElementById(clickThisId)?.click();
+        }
+      });
+    }
+
+    updateUI();
+  });
+
+  document.dispatchEvent(new Event('plan-calculator-ready'));
+});
+</script>
+
 
 
 <!----------------------- ⚡ Form ⚡ ------------------------->

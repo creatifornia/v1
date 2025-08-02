@@ -1,8 +1,674 @@
+<!-------------------------🦩 Data 🦩------------------------>
+
+<!-- 💼 Offices 💼 -->
+<script type="text/javascript">
+  const CRUCIAL_PATHS = [
+    'country.currency.ISO_4217',
+    'club.plan_id',
+    'country.lang.ISO_639',
+    'country.ISO_3166_1_alfa_2'
+  ];
+
+  const MAX_RETRIES = 10;
+  const RETRY_INTERVAL = 200; // ms
+  const WAIT_TIME_AFTER_FAILURE = 30000; // 30 seconds
+
+  document.addEventListener("DOMContentLoaded", initCreatifornia);
+  document.addEventListener("get-creatifornia", initCreatifornia);
+
+  function initCreatifornia() {
+    const authToken = localStorage.getItem("AuthToken");
+    if (!authToken) return;
+
+    xano.setAuthToken(authToken);
+    xano.get('/offices').then(response => {
+      if (response && response.body) {
+        localStorage.setItem("offices", JSON.stringify(response.body));
+        validateCrucialPaths(response.body, 0);
+      }
+    }).catch(error => {
+      console.error("❌ Error al obtener datos de Creatifornia:", error);
+    });
+  }
+
+  function validateCrucialPaths(data, attempt) {
+    if (allCrucialPathsExist(data)) {
+      console.log("💼 Offices");
+      document.dispatchEvent(new Event("creatifornia-ready"));
+      return;
+    }
+
+    if (attempt < MAX_RETRIES) {
+      setTimeout(() => {
+        const storedData = JSON.parse(localStorage.getItem("offices") || "{}");
+        validateCrucialPaths(storedData, attempt + 1);
+      }, RETRY_INTERVAL);
+    } else {
+      console.warn("⚠️ Crucial paths no encontrados tras múltiples intentos. Esperando 30 segundos para reintentar.");
+      setTimeout(() => {
+        document.dispatchEvent(new Event("get-creatifornia"));
+      }, WAIT_TIME_AFTER_FAILURE);
+    }
+  }
+
+  function allCrucialPathsExist(data) {
+    return CRUCIAL_PATHS.every(path => {
+      const value = getNestedValue(data, path);
+      return value !== undefined && value !== null;
+    });
+  }
+
+  function getNestedValue(obj, path) {
+    return path.split('.').reduce((acc, key) => {
+      return acc && acc[key] !== undefined ? acc[key] : undefined;
+    }, obj);
+  }
+</script>
+
+<!-- 🦧 Options 🦧 -->
+<script type="text/javascript">
+document.addEventListener("creatifornia-ready", initOptions);
+
+// Versión actual del sistema - ACTUALIZAR CON CAMBIOS
+const CURRENT_SYSTEM_VERSION = 'v1.0';
+
+function initOptions() {
+    const authToken = localStorage.getItem("AuthToken");
+    const existingOptions = localStorage.getItem("options");
+    
+    // Verificar parámetro ?update en URL
+    const forceRefresh = new URLSearchParams(window.location.search).has('update');
+    
+    if (forceRefresh && existingOptions) {
+        console.log("🦧 Options by URL");
+        localStorage.removeItem("options");
+    }
+    
+    // 1. Validar opciones existentes
+    if (existingOptions && !forceRefresh) {
+        try {
+            const parsedOptions = JSON.parse(existingOptions);
+            if (parsedOptions.version === CURRENT_SYSTEM_VERSION) {
+                document.dispatchEvent(new Event("options-ready"));
+                console.log("🦧 Options");
+                return;
+            }
+            localStorage.removeItem("options");
+        } catch (e) {
+            console.warn("Corrupted options, refreshing...");
+            localStorage.removeItem("options");
+        }
+    }
+
+    // 2. Descargar nuevas opciones si hay token
+    if (authToken) {
+        xano.setAuthToken(authToken);
+        
+        // Función corregida para aplanar datos
+        const transformStructure = (optionsArray) => {
+            const result = {};
+            
+            optionsArray.forEach(item => {
+                Object.entries(item).forEach(([key, value]) => {
+                    // Manejar arrays (categorías con opciones)
+                    if (Array.isArray(value)) {
+                        const optionsObj = value.find(i => i.options);
+                        const messageObj = value.find(i => i.message);
+                        
+                        result[key] = {
+                            options: optionsObj?.options || [],
+                            message: messageObj?.message || 'Elige una opción'
+                        };
+                    } 
+                    // Manejar objetos simples
+                    else if (typeof value === 'object' && value !== null) {
+                        result[key] = value;
+                    }
+                });
+            });
+            
+            return result;
+        };
+
+        // Función segura para obtener valores desde localStorage.offices
+        function getOffices(path) {
+            try {
+                const data = JSON.parse(localStorage.getItem("offices") || "{}");
+                return path.split('.').reduce((acc, key) => acc?.[key], data);
+            } catch (e) {
+                console.error("❌ Error parsing offices from localStorage:", e);
+                return null;
+            }
+        }
+
+        (async () => {
+            try {
+                // Usar getOffices para acceso seguro
+                const lang = getOffices('country.lang.ISO_639');
+                const country = getOffices('country.ISO_3166_1_alfa_2');
+                
+                const response = await xano.get(`/options?lang=${lang}&country=${country}`);
+                
+                if (response?.body && Array.isArray(response.body)) {
+                    const finalOptions = {
+                        ...transformStructure(response.body),
+                        version: CURRENT_SYSTEM_VERSION
+                    };
+                    
+                    localStorage.setItem("options", JSON.stringify(finalOptions));
+                    console.log(`🦧 Options ${CURRENT_SYSTEM_VERSION}`, finalOptions);
+                    document.dispatchEvent(new Event("options-ready"));
+                }
+            } catch (error) {
+                console.error("❌ Options error:", error);
+            }
+        })();
+    }
+}
+</script>
+
+<!-- 🌊 Dynamic 🌊 -->
+<script type="text/javascript">
+    
+document.addEventListener("creatifornia-ready", initDynamicText);
+
+// Versión actual del sistema
+const CURRENT_DYNAMIC_TEXT_VERSION = 'v1.0';
+
+function initDynamicText() {
+    const authToken = localStorage.getItem("AuthToken");
+    const existingText = localStorage.getItem("dynamic");
+    
+    // Verificar parámetro ?update
+    const forceRefresh = new URLSearchParams(window.location.search).has('update');
+    
+    if (forceRefresh && existingText) {
+        console.log("🌊 Dynamic by URL");
+        localStorage.removeItem("dynamic");
+    }
+    
+    // 1. Validar texto existente
+    if (existingText && !forceRefresh) {
+        try {
+            const parsedText = JSON.parse(existingText);
+            if (parsedText.version === CURRENT_DYNAMIC_TEXT_VERSION) {
+                document.dispatchEvent(new Event("dynamic-ready"));
+                console.log("🌊 Dynamic");
+                return;
+            }
+            localStorage.removeItem("dynamic");
+        } catch (e) {
+            console.warn("Corrupted dynamic, refreshing...");
+            localStorage.removeItem("dynamic");
+        }
+    }
+
+    // 2. Descargar nuevo texto si hay token
+    if (authToken) {
+        xano.setAuthToken(authToken);
+
+        // Función segura para obtener valores desde localStorage.offices
+        function getOffices(path) {
+            try {
+                const data = JSON.parse(localStorage.getItem("offices") || "{}");
+                return path.split('.').reduce((acc, key) => acc?.[key], data);
+            } catch (e) {
+                console.error("❌ Error parsing offices from localStorage:", e);
+                return null;
+            }
+        }
+        
+        (async () => {
+            try {
+                // Obtener parámetros directamente desde getOffices
+                const lang = getOffices('country.lang.ISO_639');
+                const country = getOffices('country.ISO_3166_1_alfa_2');
+                
+                const response = await xano.get(`/dynamic?lang=${lang}&country=${country}`);
+                
+                if (response?.body) {
+                    const flattenedText = response.body.flat(Infinity).reduce((acc, item) => {
+                        if (typeof item === 'object' && item !== null) {
+                            Object.entries(item).forEach(([key, value]) => {
+                                if (typeof value === 'string' || typeof value === 'number') {
+                                    acc[key] = value;
+                                }
+                            });
+                        }
+                        return acc;
+                    }, { version: CURRENT_DYNAMIC_TEXT_VERSION });
+                    
+                    localStorage.setItem("dynamic", JSON.stringify(flattenedText));
+                    console.log(`🌊 Dynamic ${CURRENT_DYNAMIC_TEXT_VERSION}`);
+                    document.dispatchEvent(new Event("dynamic-ready"));
+                }
+            } catch (error) {
+                console.error("❌ dynamic error:", error);
+            }
+        })();
+    }
+}
+</script>
+
+<!-- 🐎 DataAPI 🐎 -->
+  <script type="text/javascript">
+  document.addEventListener("creatifornia-ready", fetchData);
+
+  const CURRENT_DATA_VERSION = 'v1.0';
+
+  function fetchData() {
+    (async () => {
+      const authToken = localStorage.getItem("AuthToken");
+      const existingData = localStorage.getItem("data");
+      
+      // Verificar parámetro de actualización
+      const urlParams = new URLSearchParams(window.location.search);
+      const forceRefresh = urlParams.has('update');
+      
+      if (forceRefresh && existingData) {
+        console.log("🐎 Data API by URL");
+        localStorage.removeItem("data");
+      }
+      
+      // Verificar cache
+      if (existingData && !forceRefresh) {
+        try {
+          const parsedData = JSON.parse(existingData);
+          if (parsedData.version === CURRENT_DATA_VERSION) {
+            document.dispatchEvent(new Event("data-api-ready")); 
+            console.log("🐎 Data API");
+            return;
+          }
+          localStorage.removeItem("data");
+        } catch (e) {
+          console.warn("Corrupted data, refreshing...");
+          localStorage.removeItem("data");
+        }
+      }
+
+      if (authToken) {
+        xano.setAuthToken(authToken);
+        
+        try {
+          const response = await xano.get('/data');
+          if (response?.body) {
+            // Función para limpiar la estructura
+            const cleanStructure = (data) => {
+              if (Array.isArray(data)) {
+                // Convertir array a objeto manteniendo las claves originales
+                let result = {};
+                data.forEach(item => {
+                  if (typeof item === 'object' && item !== null) {
+                    Object.keys(item).forEach(key => {
+                      result[key] = cleanStructure(item[key]);
+                    });
+                  }
+                });
+                return result;
+              } else if (typeof data === 'object' && data !== null) {
+                let result = {};
+                Object.keys(data).forEach(key => {
+                  result[key] = cleanStructure(data[key]);
+                });
+                return result;
+              }
+              return data;
+            };
+            
+            const cleanedData = cleanStructure(response.body);
+            cleanedData.version = CURRENT_DATA_VERSION;
+            
+            localStorage.setItem("data", JSON.stringify(cleanedData));
+            console.log(`🐎 Data API (${CURRENT_DATA_VERSION})`);
+            document.dispatchEvent(new Event("data-api-ready"));
+          }
+        } catch (error) {
+          console.error("❌ Data fetch error:", error);
+        }
+      }
+    })();
+  }
+</script>
+
+<!-- 🌎 Translate 🌎 -->
+<script type="text/javascript">
+document.addEventListener("creatifornia-ready", initTranslate);
+
+// Versión actual del sistema - ACTUALIZAR CON CAMBIOS
+const CURRENT_TRANSLATE_VERSION = 'v1.0';
+
+function initTranslate() {
+    // Función segura para obtener valores desde localStorage.offices
+    function getOffices(path) {
+        try {
+            const data = JSON.parse(localStorage.getItem("offices") || "{}");
+            return path.split('.').reduce((acc, key) => acc?.[key], data);
+        } catch (e) {
+            console.error("❌ Error parsing offices from localStorage:", e);
+            return null;
+        }
+    }
+
+    (async () => {
+        // 1. Obtener idioma directamente de Offices
+        const lang = getOffices('country.lang.ISO_639');
+        
+        if (lang === 'es') {
+            document.dispatchEvent(new CustomEvent("translate-not-needed", {
+                detail: { lang }
+            }));
+            return;
+        }
+
+        const authToken = localStorage.getItem("AuthToken");
+        const existingText = localStorage.getItem("translate");
+        
+        // Verificar parámetro de actualización
+        const forceRefresh = new URLSearchParams(window.location.search).has('update');
+        
+        if (forceRefresh && existingText) {
+            console.log("🌎 Translate Data by URL");
+            localStorage.removeItem("translate");
+        }
+        
+        // 2. Verificar si existe texto con versión actual
+        if (existingText && !forceRefresh) {
+            try {
+                const parsedText = JSON.parse(existingText);
+                
+                if (parsedText.version === CURRENT_TRANSLATE_VERSION) {
+                    document.dispatchEvent(new Event("translate-data-ready")); 
+                    console.log("🌎 Translate Data");
+                    return;
+                }
+                
+                localStorage.removeItem("translate");
+            } catch (e) {
+                console.warn("Corrupted translate, refreshing...");
+                localStorage.removeItem("translate");
+            }
+        }
+
+        if (authToken) {
+            xano.setAuthToken(authToken);
+            
+            try {
+                // Obtener país directamente de Offices
+                const country = getOffices('country.ISO_3166_1_alfa_2');
+                const apiUrl = `/translate?lang=${lang}&country=${country}`;
+                
+                const response = await xano.get(apiUrl);
+                if (response?.body) {
+                    const finalText = response.body.flat(Infinity).reduce((acc, item) => {
+                        if (typeof item === 'object' && item !== null) {
+                            Object.entries(item).forEach(([key, value]) => {
+                                if (typeof value === 'string' || typeof value === 'number') {
+                                    acc[key] = value;
+                                }
+                            });
+                        }
+                        return acc;
+                    }, { version: CURRENT_TRANSLATE_VERSION });
+                    
+                    localStorage.setItem("translate", JSON.stringify(finalText));
+                    console.log(`🌎 Translate Data ${CURRENT_TRANSLATE_VERSION}`);
+                    document.dispatchEvent(new Event("translate-data-ready"));
+                }
+            } catch (error) {
+                console.error("❌ translate error:", error);
+            }
+        }
+    })();
+}
+</script>
+
+<!--⏰ Events: data-ready ⏰ --> 
+<script> //añadir dvento de actualizar cache si es necesario
+  (function() {
+    const REQUIRED_EVENTS = [
+      "options-ready",
+      "dynamic-ready",
+      "data-api-ready"
+    ];
+
+    let receivedEvents = new Set();
+    let readyTimer = null;
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        clearTimeout(readyTimer); // Cancelar timer previo si existe
+        readyTimer = setTimeout(() => {
+          console.log("⏰🦩");
+          document.dispatchEvent(new Event("data-ready"));
+          resetCoordinator();
+        }, 300); 
+      }
+    }
+
+    function resetCoordinator() {
+      receivedEvents.clear();
+    }
+
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script> 
+
+
+
+<!------------------------🐳 Fill  🐳 ------------------------>
+
+<!-- 🦨 Text 🦨  -->
+<script type="text/javascript">
+document.addEventListener("data-ready", fillTextFromCache);
+
+function fillTextFromCache() {
+    const elements = document.querySelectorAll('[fill-text-key]');
+    let elementsProcessed = 0;
+    const totalElements = elements.length;
+
+    if (totalElements === 0) {
+        dispatchTextReady();
+        return;
+    }
+
+    elements.forEach(element => {
+        const cacheKey = element.getAttribute('fill-text-key'); 
+        const path = element.getAttribute('fill-text-path');
+        
+        if (!cacheKey || !path) {
+            checkAllElementsProcessed();
+            return;
+        }
+
+        const value = getFromCache(cacheKey, path);
+
+        if (value !== null && value !== undefined) {
+            element.textContent = value;
+        }
+
+        checkAllElementsProcessed();
+    });
+
+    function getFromCache(key, path) {
+        try {
+            const data = JSON.parse(localStorage.getItem(key) || "{}");
+            return path.split('.').reduce((acc, key) => acc?.[key], data);
+        } catch (e) {
+            console.error(`❌ Error accessing localStorage[${key}]:`, e);
+            return null;
+        }
+    }
+
+    function checkAllElementsProcessed() {
+        elementsProcessed++;
+        if (elementsProcessed === totalElements) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    dispatchTextReady();
+                });
+            });
+        }
+    }
+
+    function dispatchTextReady() {
+        const event = new CustomEvent('fill-text-ready', {
+            bubbles: true,
+            cancelable: true,
+            detail: { 
+                elementsCount: totalElements,
+                timestamp: performance.now()
+            }
+        });
+        document.dispatchEvent(event);
+    }
+}
+</script>
+
+<!-- 📮 Inputs 📮  -->
+<script type="text/javascript">
+document.addEventListener("data-ready", fillInputsFromCache);
+
+function fillInputsFromCache() {
+    const inputs = document.querySelectorAll('[fill-inputs-key]');
+    let inputsProcessed = 0;
+    const totalInputs = inputs.length;
+
+    if (totalInputs === 0) {
+        dispatchInputsReady();
+        return;
+    }
+
+    inputs.forEach(input => {
+        const cacheKey = input.getAttribute('fill-inputs-key'); // 'offices', 'translate', 'dynamic'
+        const path = input.getAttribute('fill-inputs-path');
+
+        if (!cacheKey || !path) {
+            checkAllInputsProcessed();
+            return;
+        }
+
+        const value = getFromCache(cacheKey, path);
+
+        if (value !== null && value !== undefined) {
+            if (input.type === 'checkbox') {
+                input.checked = Boolean(value);
+            } else if (input.type === 'radio') {
+                if (input.value === value.toString()) input.checked = true;
+            } else if (input.tagName === 'SELECT' && input.multiple && Array.isArray(value)) {
+                Array.from(input.options).forEach(opt => {
+                    opt.selected = value.includes(opt.value);
+                });
+            } else {
+                input.value = value;
+            }
+
+            // Set placeholder only if not already defined
+            if (!input.placeholder && typeof value === 'string') {
+                input.placeholder = value;
+            }
+        }
+
+        checkAllInputsProcessed();
+    });
+
+    function getFromCache(key, path) {
+        try {
+            const data = JSON.parse(localStorage.getItem(key) || "{}");
+            return path.split('.').reduce((acc, key) => acc?.[key], data);
+        } catch (e) {
+            console.error(`❌ Error accessing localStorage[${key}]:`, e);
+            return null;
+        }
+    }
+
+    function checkAllInputsProcessed() {
+        inputsProcessed++;
+        if (inputsProcessed === totalInputs) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    dispatchInputsReady();
+                });
+            });
+        }
+    }
+
+    function dispatchInputsReady() {
+        const event = new CustomEvent('fill-inputs-ready', {
+            bubbles: true,
+            cancelable: true,
+            detail: {
+                inputsCount: totalInputs,
+                timestamp: performance.now()
+            }
+        });
+        document.dispatchEvent(event);
+    }
+}
+</script>
+
+<!-- 🐓 Direct 🐓 -->
+<script>
+document.addEventListener('data-ready', () => {
+  const elements = document.querySelectorAll('[cf-direct-input]');
+  
+  // Procesar elementos si existen
+  elements.forEach(el => {
+    el.value = el.getAttribute('cf-direct-input');
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+
+  // Disparar el evento INCLUSO si no hay elementos
+  document.dispatchEvent(new Event('direct-inputs-ready'));
+  
+});
+</script>
+
+<!--⏰ Events: fill-ready ⏰ -->
+<script>
+  (function() {
+    const REQUIRED_EVENTS = [
+      "direct-inputs-ready",
+      "fill-inputs-ready",
+      "fill-text-ready"
+     
+                            ];
+
+    let receivedEvents = new Set();
+
+    function checkAllReady() {
+      if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+        console.log("⏰🐳");
+        document.dispatchEvent(new Event("fill-ready"));
+        resetCoordinator(); // ⬅️ Reinicio automático justo después
+      }
+    }
+
+    function resetCoordinator() {
+      receivedEvents.clear();
+    }
+
+    // Escucha todos los eventos requeridos
+    REQUIRED_EVENTS.forEach(eventName => {
+      document.addEventListener(eventName, () => {
+        if (!receivedEvents.has(eventName)) {
+          receivedEvents.add(eventName);
+          checkAllReady();
+        }
+      });
+    });
+  })();
+</script> 
 
 
 
 <!------------------------🧱 Components 🧱------------------------>
-
 
 <!-- 🦧 Options 🦧 -->
 <script>
@@ -313,41 +979,53 @@ function buildKeywords() {
 }
 </script>
 
-<!-- 💰 Currency-v1-1 💰 -->
-<script>
+<!-- 💰 Currency 💰 -->
+<script>    
 document.addEventListener("data-ready", function() {
-  // Check if currency uses cents
-  const currencyCents = window.Offices?.get('country.currency.cents');
+  // Función auxiliar para obtener datos desde localStorage
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+      return undefined;
+    }
+  }
+
+  // Verificar si la moneda usa centavos
+  const currencyCents = !!getCache('offices', 'country.currency.cents');
   if (!currencyCents) {
     document.dispatchEvent(new Event('currency-cents'));
     return;
   }
 
   const containers = document.querySelectorAll("[cf-currency-build]");
-  
   containers.forEach(container => {
     const visibleInput = container.querySelector("input[type='text']");
     if (!visibleInput) return;
 
-    // Get currency configuration using window.Offices?.get
-    const currency = window.Offices?.get('country.currency.ISO_4217');
-    const symbol = window.Offices?.get('country.currency.symbol');
+    const currency = getCache('offices', 'country.currency.ISO_4217');
+    const symbol = getCache('offices', 'country.currency.symbol');
     const minCurrency = parseFloat(container.getAttribute("cf-min-currency")) || 0;
     const maxCurrency = parseFloat(container.getAttribute("cf-max-currency")) || Number.MAX_SAFE_INTEGER;
     const jsonPath = container.getAttribute("cf-currency-path");
     const cfRequired = container.getAttribute("cf-required") === 'true';
-    
-    // Get messages using window.Offices?.get
-    const requiredMessage = window.Offices?.get('country.currency.required_message');
-    const minimumMessage = window.Offices?.get('country.currency.minimum_message') ?  
-      `${window.Offices?.get('country.currency.minimum_message')} ${symbol}${(minCurrency/100).toFixed(2)}` : 
-      `El monto mínimo es ${symbol}${(minCurrency/100).toFixed(2)}`;
-    
-    const maxMessage = window.Offices?.get('country.currency.max_message') ?  
-      `${window.Offices?.get('country.currency.max_message')} ${symbol}${(maxCurrency/100).toFixed(2)}` : 
-      `El monto máximo es ${symbol}${(maxCurrency/100).toFixed(2)}`;
 
-    // Update currency display if element exists
+    // Obtener mensajes desde cache
+    const requiredMessage = getCache('offices', 'country.currency.required_message');
+    const minimumRawMessage = getCache('offices', 'country.currency.minimum_message');
+    const maximumRawMessage = getCache('offices', 'country.currency.max_message');
+
+    const minimumMessage = minimumRawMessage
+      ? `${minimumRawMessage} ${symbol}${(minCurrency / 100).toFixed(2)}`
+      : `El monto mínimo es ${symbol}${(minCurrency / 100).toFixed(2)}`;
+
+    const maxMessage = maximumRawMessage
+      ? `${maximumRawMessage} ${symbol}${(maxCurrency / 100).toFixed(2)}`
+      : `El monto máximo es ${symbol}${(maxCurrency / 100).toFixed(2)}`;
+
+    // Actualizar visualización de currency
     const currencyDisplay = container.querySelector('[this-is-currency]');
     if (currencyDisplay) {
       currencyDisplay.textContent = currency;
@@ -450,11 +1128,21 @@ document.addEventListener("data-ready", function() {
 });
 </script>
 
-<!-- 🐶 Friendly-URL 🐶-->
+<!-- 🐶 FriendlyURL 🐶-->
 <script>
-document.addEventListener('data-ready', function() {
-  // Seleccionar todos los componentes por su contenedor principal
-  const components = document.querySelectorAll('[json-path][message-path]');
+document.addEventListener("data-ready", function() {
+  // Función auxiliar para obtener datos desde localStorage
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data); 
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+      return undefined;
+    }
+  }
+
+  const components = document.querySelectorAll('friendly-url');
   
   components.forEach(component => {
     // Obtener atributos del componente
@@ -462,7 +1150,7 @@ document.addEventListener('data-ready', function() {
     const messagePath = component.getAttribute('message-path');
     const previewUsernamePath = component.getAttribute('preview-username');
     const previewUrlPath = component.getAttribute('preview-url-friendly');
-    const buildMessage = window.Dynamic?.get(messagePath, 'Required*');
+    const buildMessage = getCache('dynamic', messagePath);
     
     // Obtener elementos internos
     const previewText = component.querySelector('[update-this-with-type-username]');
@@ -517,11 +1205,11 @@ document.addEventListener('data-ready', function() {
       
       // Actualizar ambos previews
       if (previewText) {
-        previewText.textContent = usernameDisplay || window.Dynamic?.get(previewUsernamePath, 'Username');
+        previewText.textContent = usernameDisplay || getCache('dynamic', previewUsernamePath);
       }
       
       if (previewUrl) {
-        previewUrl.textContent = friendly || window.Dynamic?.get(previewUrlPath, 'username');
+        previewUrl.textContent = friendly || getCache('dynamic', previewUrlPath);
       }
       
       // Actualizar hidden input
@@ -609,102 +1297,120 @@ document.addEventListener('data-ready', function() {
 });
 </script>
 
-<!-- 🐊 Plan-Calculator 🐊-->
+<!-- 🐊 PlanCalculator 🐊-->
 <script>
-document.addEventListener('data-ready', function() {
-    const planCalculators = document.querySelectorAll('[plan_calculator]');
-    const currency = window.Offices?.get('country.currency.ISO_4217');
-    const currencySymbol = window.Offices?.get('country.currency.symbol') || '$';
-    
-    if (!currency) {
-        console.error('No se pudo obtener la moneda');
-        return;
+document.addEventListener("data-ready", function () {
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+      return undefined;
+    }
+  }
+
+  const currencyCents = !!getCache('offices', 'country.currency.cents');
+  if (!currencyCents) {
+    document.dispatchEvent(new Event('plan-calculator-cents'));
+    return;
+  }
+
+  const planCalculators = document.querySelectorAll('[plan_calculator]');
+  const currency = getCache('offices', 'country.currency.ISO_4217');
+  const currencySymbol = getCache('offices', 'country.currency.symbol');
+
+  if (!currency) {
+    console.error('No se pudo obtener la moneda');
+    return;
+  }
+
+  planCalculators.forEach(calculator => {
+    const planId = calculator.getAttribute('plan_id');
+    const limit = parseInt(calculator.getAttribute('limit') || 5);
+    const jsonPath = calculator.getAttribute('json-path');
+    const clickThisId = calculator.getAttribute('click_this');
+
+    const firstUnit = parseFloat(getCache('data', `scalable_plans.${planId}.${currency}.raw_value_1`));
+    const secondUnit = parseFloat(getCache('data', `scalable_plans.${planId}.${currency}.raw_value_second_unit`));
+
+    if (isNaN(firstUnit) || isNaN(secondUnit)) {
+      console.error(`Datos incompletos o inválidos para plan ${planId} y moneda ${currency}`);
+      return;
     }
 
-    planCalculators.forEach(calculator => {
-        const planId = calculator.getAttribute('plan_id');
-        const limit = parseInt(calculator.getAttribute('limit') || 5);
-        const jsonPath = calculator.getAttribute('json-path');
-        const clickThisId = calculator.getAttribute('click_this');
-        
-        // Obtener valores directamente desde DataAPI
-        const firstUnit = window.DataAPI?.get(`scalable_plans.${planId}.${currency}.raw_value_1`);
-        const secondUnit = window.DataAPI?.get(`scalable_plans.${planId}.${currency}.raw_value_second_unit`);
-        
-        if (!firstUnit || !secondUnit) {
-            console.error(`Datos incompletos para plan ${planId} y moneda ${currency}`);
-            return;
-        }
+    const currencyElement = calculator.querySelector('[currency]');
+    const unitElement = calculator.querySelector('[first_unit][second_unit]');
+    const symbolElement = calculator.querySelector('[symbol]');
+    const StorageUnitElement = calculator.querySelector('[storage_unit]');
+    const StorageUnit = StorageUnitElement?.getAttribute('storage_unit');
+    const storageBaseElement = calculator.querySelector('[storage_base]');
+    const decreaseButton = calculator.querySelector('[cf="disminuir"]')?.closest('a');
+    const increaseButton = calculator.querySelector('[cf="aumentar"]')?.closest('a');
 
-        // Elementos del DOM (sin cambios)
-        const currencyElement = calculator.querySelector('[currency]');
-        const unitElement = calculator.querySelector('[first_unit][second_unit]');
-        const storageBaseElement = calculator.querySelector('[storage_base]');
-        const decreaseButton = calculator.querySelector('[cf="disminuir"]')?.closest('a');
-        const increaseButton = calculator.querySelector('[cf="aumentar"]')?.closest('a');
-        
-        // Configuración inicial
-        if (currencyElement) currencyElement.textContent = currency;
-        const storageBase = parseInt(storageBaseElement?.getAttribute('storage_base') || '200');
-        let currentLevel = 1;
-        let currentUnit = firstUnit;
-        
-        // Input hidden (sin cambios)
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = jsonPath;
-        hiddenInput.setAttribute('cf-json-path', jsonPath);
-        hiddenInput.setAttribute('data-required', 'true');
-        hiddenInput.value = currentLevel;
-        calculator.appendChild(hiddenInput);
-        
-        // Función para actualizar UI (optimizada)
-        function updateUI() {
-            if (storageBaseElement) {
-                storageBaseElement.textContent = storageBase * currentLevel;
-            }
-            if (unitElement) {
-                unitElement.textContent = `${currencySymbol}${currentUnit}`;
-            }
-            if (decreaseButton) {
-                decreaseButton.classList.toggle('inutil', currentLevel === 1);
-            }
+    if (currencyElement) currencyElement.textContent = currency;
+    const storageBase = parseInt(storageBaseElement?.getAttribute('storage_base'));
+    let currentLevel = 1;
+    let currentAmount = firstUnit;
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = jsonPath;
+    hiddenInput.setAttribute('cf-json-path', jsonPath);
+    hiddenInput.setAttribute('data-required');
+    hiddenInput.value = currentLevel;
+    calculator.appendChild(hiddenInput);
+
+    function updateUI() {
+      if (storageBaseElement) {
+        storageBaseElement.textContent = storageBase * currentLevel;
+      }
+      if (unitElement) {
+        unitElement.textContent = `${currencySymbol}${currentAmount.toFixed(2)}`;
+      }
+      if (symbolElement) {
+        symbolElement.textContent = currencySymbol;
+      }
+      if (StorageUnitElement) {
+        StorageUnitElement.textContent = StorageUnit;
+      }
+      if (decreaseButton) {
+        decreaseButton.classList.toggle('inutil', currentLevel === 1);
+      }
+    }
+
+    if (decreaseButton) {
+      decreaseButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentLevel > 1) {
+          currentLevel--;
+          currentAmount = currentLevel === 1 ? firstUnit : currentAmount - secondUnit;
+          updateUI();
         }
-        
-        // Eventos (sin cambios)
-        if (decreaseButton) {
-            decreaseButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (currentLevel > 1) {
-                    currentLevel--;
-                    currentUnit = currentLevel === 1 ? firstUnit : (currentUnit - secondUnit);
-                    updateUI();
-                }
-            });
+      });
+    }
+
+    if (increaseButton) {
+      increaseButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (currentLevel < limit) {
+          currentLevel++;
+          currentAmount = currentAmount + secondUnit;
+          updateUI();
+        } else if (clickThisId) {
+          document.getElementById(clickThisId)?.click();
         }
-        
-        if (increaseButton) {
-            increaseButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (currentLevel < limit) {
-                    currentLevel++;
-                    currentUnit = Number(currentUnit) + Number(secondUnit);
-                    updateUI();
-                } else if (clickThisId) {
-                    document.getElementById(clickThisId)?.click();
-                }
-            });
-        }
-        
-        updateUI();
-    });
-    
-    document.dispatchEvent(new Event('plan-calculator-ready'));
+      });
+    }
+
+    updateUI();
+  });
+
+  document.dispatchEvent(new Event('plan-calculator-ready'));
 });
 </script>
 
-
-<!--⏰ Events-Components  -->
+<!--⏰ Events: inputs-ready⏰ -->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -719,7 +1425,7 @@ document.addEventListener('data-ready', function() {
 
     function checkAllReady() {
       if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
-        console.log("⏰ Components");
+        console.log("⏰🧱");
         document.dispatchEvent(new Event("inputs-ready"));
         resetCoordinator(); // ⬅️ Reinicio automático justo después
       }
@@ -742,19 +1448,7 @@ document.addEventListener('data-ready', function() {
 </script>
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-<!----------------------- ⚡ form submit ⚡ ----------------------->
+<!----------------------- ⚡ form submit ⚡ --------------------->
 <script>
 
 //⚡ VALIDACIONES
@@ -1072,70 +1766,58 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 </script>
 
 
+<!------------------------🦉 Display 🦉  ------------------------>
 
-
-<!------------------------🙉 Display 🙉 ------------------------>
-
-<!-- 🌍 Translate-Binding 🌍 -->
+<!-- 🌍 Translate 🌍 -->
 <script>
-// Estado para rastrear eventos recibidos
-const eventState = {
-    inputsReady: false,
-    translateCache: false
-};
+document.addEventListener('translate-data-ready', () => {
 
-// Handler para inputs-ready
-document.addEventListener('inputs-ready', () => {
-    eventState.inputsReady = true;
-    checkEvents();
-});
-
-// Handler para translate-cache
-document.addEventListener('translate-cache', () => {
-    eventState.translateCache = true;
-    checkEvents();
-});
-
-// Verificar si ambos eventos se han disparado
-function checkEvents() {
-    if (eventState.inputsReady && eventState.translateCache) {
-        applyTranslations();
-    }
-}
-
-// Función principal de traducción
-function applyTranslations() {
+  // Función robusta para obtener datos desde localStorage
+  function getCache(key, path = '') {
     try {
-        // Usar Translate.get() en lugar de localStorage
-        const translateData = window.Translate?.get('') || {};  // Obtener todo el objeto
-        
-        // Seleccionar elementos con atributo cf
-        const elements = document.querySelectorAll('[cf]');
-        
-        // Procesar cada elemento
-        elements.forEach(element => {
-            const componentName = element.getAttribute('cf');
-            if (translateData[componentName]) {
-                // Preservar HTML interno si es necesario
-                const hasHTML = element.innerHTML.trim() !== element.textContent.trim();
-                element[hasHTML ? 'innerHTML' : 'textContent'] = translateData[componentName];
-            }
-        });
-        
-        console.log("🌍 Translation Applied");
-    } catch (error) {
-        console.error('❌ Translation binding error:', error);
-    }
-    
-    // Disparar evento de finalización
-    document.dispatchEvent(new Event('translation-finished'));
-}
+      const raw = localStorage.getItem(key);
+      if (!raw) return undefined;
 
-// Manejar translate-not-needed (si aún existe)
-document.addEventListener('translate-not-needed', () => {
+      const data = JSON.parse(raw);
+      if (!path) return data;
+
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}${path ? '.' + path : ''}`);
+      return undefined;
+    }
+  }
+
+  // Función principal de traducción
+  function applyTranslations() {
+    try {
+      const translateData = getCache('translate') || {};
+
+      const elements = document.querySelectorAll('[cf]');
+
+      elements.forEach(element => {
+        const componentName = element.getAttribute('cf');
+        if (translateData?.[componentName]) {
+          const hasHTML = element.innerHTML.trim() !== element.textContent.trim();
+          element[hasHTML ? 'innerHTML' : 'textContent'] = translateData[componentName];
+        }
+      });
+
+      console.log("🌍 Translation Finished");
+    } catch (error) {
+      console.error('❌ Translation binding error:', error);
+    }
+
+    // Emitir evento final
     document.dispatchEvent(new Event('translation-finished'));
-    console.log("🌍 Es");
-    
+  }
+
+  applyTranslations();
+});
+
+document.addEventListener('translate-not-needed', () => {
+  document.dispatchEvent(new Event('translation-finished'));
+  console.log("🌍 ES");
 });
 </script>
 
@@ -1215,7 +1897,7 @@ document.addEventListener('translate-not-needed', () => {
 </script>
 
 
-<!--⏰ Events-Display ⏰ --->
+<!--⏰ Events: cf-loader-off ⏰ --->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -1229,7 +1911,7 @@ document.addEventListener('translate-not-needed', () => {
 
     function checkAllReady() {
       if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
-        console.log("⏰ Display");
+        console.log("⏰🦉");
         document.dispatchEvent(new Event("cf-loader-off"));
         resetCoordinator(); // ⬅️ Reinicio automático justo después
       }
@@ -1255,20 +1937,9 @@ document.addEventListener('translate-not-needed', () => {
 
 
 
+<!------------------------🐇 Options 🐇------------------------>
 
-
-
-
-
-
-
-
-
-
-
-<!------------------------🐇 Handlers 🐇------------------------>
-
-<!-- 🎯 options-handler -->
+<!-- 🎯 Handler 🎯 -->
 <script>
 document.addEventListener("options-builder-ready", () => {
   document.querySelectorAll("[cf-options-value]").forEach(input => {
@@ -1372,7 +2043,7 @@ function showErrorModal(message) {
 }
 </script>
 
-<!-- 🧩 options-checkbox -->
+<!-- 🟦 Checkbox 🟦 -->
 <script>
   document.addEventListener("valid-change-checkbox", (e) => {
     const { input, value, path, isChecked } = e.detail;
@@ -1444,7 +2115,7 @@ document.querySelectorAll(`
 </script>
 
 
-<!-- 🧩 options-radio -->
+<!-- 🟧 Radio🟧 -->
 <script>
   document.addEventListener("valid-change-radio", (e) => {
     const { input, value, isChecked } = e.detail;
@@ -1514,20 +2185,10 @@ document.querySelectorAll(`
 
 
 
-
-
-
-
-
-
-
-
-
-
 <!----------------------- 🐬 Tools 🐬 ----------------------->
 
 
-<!-- 🦜 reset-tabs  🦜 -->
+<!-- 🦜 ResetTabs  🦜 -->
 <script>
 document.addEventListener('creatifornia-ready', function() {
   // Función principal para resetear pestañas
@@ -1556,7 +2217,7 @@ document.addEventListener('creatifornia-ready', function() {
 });
 </script>
 
-<!-- 🌀 loader -->
+<!-- 🌀 Loader 🌀 -->
 <script type="text/javascript">
   (function () {
     document.addEventListener("DOMContentLoaded", () => {
@@ -1589,7 +2250,7 @@ document.addEventListener('creatifornia-ready', function() {
 </script>
 
 
-<!--  🧯 Modal de error -->  
+<!--  🧯 Modal 🧯 -->  
   <script>
   function showErrorModal(message) {
     const modal = document.getElementById('error-modal');
@@ -1608,7 +2269,7 @@ document.addEventListener('creatifornia-ready', function() {
   }
 </script>
 
-<!-- 🐬 fill specific inputs 🐬 -->
+<!-- 🐬 FillEspecificInputs🐬 -->
 <script>
   document.addEventListener("cf-fill-specific-inputs", (e) => {
     const { key, path, formIdentifier } = e.detail || {};
@@ -1680,7 +2341,7 @@ document.addEventListener('creatifornia-ready', function() {
   });
 </script>
 
-<!-- 💙 MEMBERSCRIPT #77 v0.1 💙 UNIVERSAL EMOJIS -->
+<!-- 👽 Emojis 👽 -->
 <script>
 document.querySelectorAll('[ms-code-emoji]').forEach(element => {
   var imageUrl = element.getAttribute('ms-code-emoji');
@@ -1699,7 +2360,7 @@ document.querySelectorAll('[ms-code-emoji]').forEach(element => {
 });
 </script>
 
-<!-- 🐬 reload form 🐬 -->
+<!-- 🐬 ReloadForm 🐬 -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   // Seleccionar todos los elementos con el atributo cf-reload-form
@@ -1824,7 +2485,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- 🐬 mirror click 🐬 -->
+<!-- 🐬 Click 🐬 -->
 <script>
   // Espera a que el evento 'inputs-ready' sea disparado desde OTRO lugar
   document.addEventListener('inputs-ready', () => {
@@ -1845,7 +2506,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 </script>
 
-<!-- /////////🌴refresh🌴///////// -->
+<!-- 🌴Refresh🌴 -->
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   const alreadyRefreshed = sessionStorage.getItem("cf-refreshed");
@@ -1887,10 +2548,26 @@ document.addEventListener("DOMContentLoaded", function () {
   import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
   import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
 
+
+document.addEventListener('data-ready', () => {
+
+ // Función segura para obtener valores desde localStorage.offices
+        function getOffices(path) {
+            try {
+                const data = JSON.parse(localStorage.getItem("offices") || "{}");
+                return path.split('.').reduce((acc, key) => acc?.[key], data);
+            } catch (e) {
+                console.error("❌ Error parsing offices from localStorage:", e);
+                return null;
+            }
+        }
+        
+ 
+
   // Función para inicializar UploadCare con el locale correcto
   const initUploadCare = () => {
     try {
-      const lang = window.Offices?.get('country.lang.ISO_639') || 'es';
+      const lang = getOffices('country.lang.ISO_639');
       
       if (lang === 'es') {
         UC.defineLocale('es', es);
@@ -1902,7 +2579,7 @@ document.addEventListener("DOMContentLoaded", function () {
       
       // Disparar evento de finalización
       document.dispatchEvent(new Event('uploadcare-ready'));
-      console.log('Uploadcare initialized successfully');
+      console.log('🐞 Uploadcare');
       
     } catch (error) {
       console.error('Error initializing UploadCare:', error);
@@ -1917,40 +2594,10 @@ document.addEventListener("DOMContentLoaded", function () {
       document.dispatchEvent(errorEvent);
     }
   };
-
-  // Esperar a que los textos dinámicos estén listos
-  if (window.Dynamic && window.OfficesText) {
-    document.addEventListener('data-ready', initUploadCare);
-  } else {
-    // Cargar con valores por defecto si no existe el sistema de textos
-    console.warn('Dynamic/OfficesText no disponibles, cargando UploadCare con español por defecto');
-    UC.defineLocale('es', es);
-    UC.defineComponents(UC);
-    
-    // Disparar evento de inicialización por defecto
-    setTimeout(() => {
-      document.dispatchEvent(new Event('uploadcare-ready'));
-    }, 100);
-  }
+});
 </script>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 <!---------------------🐸 HTML 🐸--------------------->
-
 
 <!-- 🐸 MODAL response error  🐸 -->
 

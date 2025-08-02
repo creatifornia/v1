@@ -1,0 +1,1 @@
+document.addEventListener("inputs-ready",(()=>{document.querySelectorAll("[cf-click-trigger]").forEach((c=>{const e=c.getAttribute("cf-click-trigger");c.addEventListener("click",(()=>{document.querySelectorAll(`[cf-click-target="${e}"]`).forEach((c=>{c.click(),c.focus()}))}))}))}));

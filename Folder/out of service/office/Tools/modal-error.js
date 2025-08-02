@@ -1,0 +1,1 @@
+function showErrorModal(e){const o=document.getElementById("error-modal"),n=document.getElementById("error-message");o&&n?(n.innerText=e,o.style.display="flex"):console.error("❌ Elementos del modal no encontrados")}function closeErrorModal(){const e=document.getElementById("error-modal");e&&(e.style.display="none")}
