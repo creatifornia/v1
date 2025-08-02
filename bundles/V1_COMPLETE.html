@@ -3,9 +3,9 @@
 <!-- 💼 Offices 💼 -->
 <script type="text/javascript">
   const CRUCIAL_PATHS = [
-    'country.currency.ISO_4217',
+    'currency.ISO_4217',
     'club.plan_id',
-    'country.lang.ISO_639',
+    'lang.ISO_639',
     'country.ISO_3166_1_alfa_2'
   ];
 
@@ -89,7 +89,7 @@ function initOptions() {
         try {
             const parsedOptions = JSON.parse(existingOptions);
             if (parsedOptions.version === CURRENT_SYSTEM_VERSION) {
-                document.dispatchEvent(new Event("options-ready"));
+                document.dispatchEvent(new Event("options-data-ready"));
                 console.log("🦧 Options");
                 return;
             }
@@ -144,7 +144,7 @@ function initOptions() {
         (async () => {
             try {
                 // Usar getOffices para acceso seguro
-                const lang = getOffices('country.lang.ISO_639');
+                const lang = getOffices('lang.ISO_639');
                 const country = getOffices('country.ISO_3166_1_alfa_2');
                 
                 const response = await xano.get(`/options?lang=${lang}&country=${country}`);
@@ -157,7 +157,7 @@ function initOptions() {
                     
                     localStorage.setItem("options", JSON.stringify(finalOptions));
                     console.log(`🦧 Options ${CURRENT_SYSTEM_VERSION}`, finalOptions);
-                    document.dispatchEvent(new Event("options-ready"));
+                    document.dispatchEvent(new Event("options-data-ready"));
                 }
             } catch (error) {
                 console.error("❌ Options error:", error);
@@ -221,7 +221,7 @@ function initDynamicText() {
         (async () => {
             try {
                 // Obtener parámetros directamente desde getOffices
-                const lang = getOffices('country.lang.ISO_639');
+                const lang = getOffices('lang.ISO_639');
                 const country = getOffices('country.ISO_3166_1_alfa_2');
                 
                 const response = await xano.get(`/dynamic?lang=${lang}&country=${country}`);
@@ -351,7 +351,7 @@ function initTranslate() {
 
     (async () => {
         // 1. Obtener idioma directamente de Offices
-        const lang = getOffices('country.lang.ISO_639');
+        const lang = getOffices('lang.ISO_639');
         
         if (lang === 'es') {
             document.dispatchEvent(new CustomEvent("translate-not-needed", {
@@ -426,7 +426,7 @@ function initTranslate() {
 <script> //añadir dvento de actualizar cache si es necesario
   (function() {
     const REQUIRED_EVENTS = [
-      "options-ready",
+      "options-data-ready",
       "dynamic-ready",
       "data-api-ready"
     ];
@@ -469,7 +469,7 @@ function initTranslate() {
 document.addEventListener("data-ready", fillTextFromCache);
 
 function fillTextFromCache() {
-    const elements = document.querySelectorAll('[fill-text-key]');
+    const elements = document.querySelectorAll('[text]');
     let elementsProcessed = 0;
     const totalElements = elements.length;
 
@@ -479,16 +479,18 @@ function fillTextFromCache() {
     }
 
     elements.forEach(element => {
-        const cacheKey = element.getAttribute('fill-text-key'); 
-        const path = element.getAttribute('fill-text-path');
-        
-        if (!cacheKey || !path) {
+        const fullPath = element.getAttribute('text');
+
+        if (!fullPath || !fullPath.includes('.')) {
+            console.warn(`⚠️ Atributo [text] inválido: "${fullPath}"`);
             checkAllElementsProcessed();
             return;
         }
 
-        const value = getFromCache(cacheKey, path);
+        const [key, ...pathParts] = fullPath.split('.');
+        const path = pathParts.join('.');
 
+        const value = getFromCache(key, path);
         if (value !== null && value !== undefined) {
             element.textContent = value;
         }
@@ -498,10 +500,10 @@ function fillTextFromCache() {
 
     function getFromCache(key, path) {
         try {
-            const data = JSON.parse(localStorage.getItem(key) || "{}");
-            return path.split('.').reduce((acc, key) => acc?.[key], data);
+            const data = JSON.parse(localStorage.getItem(key) || '{}');
+            return path.split('.').reduce((acc, part) => acc?.[part], data);
         } catch (e) {
-            console.error(`❌ Error accessing localStorage[${key}]:`, e);
+            console.error(`❌ Error accediendo a localStorage["${key}"] con path "${path}":`, e);
             return null;
         }
     }
@@ -521,7 +523,7 @@ function fillTextFromCache() {
         const event = new CustomEvent('fill-text-ready', {
             bubbles: true,
             cancelable: true,
-            detail: { 
+            detail: {
                 elementsCount: totalElements,
                 timestamp: performance.now()
             }
@@ -530,6 +532,7 @@ function fillTextFromCache() {
     }
 }
 </script>
+
 
 <!-- 📮 Inputs 📮  -->
 <script type="text/javascript">
@@ -994,7 +997,7 @@ document.addEventListener("data-ready", function() {
   }
 
   // Verificar si la moneda usa centavos
-  const currencyCents = !!getCache('offices', 'country.currency.cents');
+  const currencyCents = !!getCache('offices', 'currency.cents');
   if (!currencyCents) {
     document.dispatchEvent(new Event('currency-cents'));
     return;
@@ -1005,17 +1008,17 @@ document.addEventListener("data-ready", function() {
     const visibleInput = container.querySelector("input[type='text']");
     if (!visibleInput) return;
 
-    const currency = getCache('offices', 'country.currency.ISO_4217');
-    const symbol = getCache('offices', 'country.currency.symbol');
+    const currency = getCache('offices', 'currency.ISO_4217');
+    const symbol = getCache('offices', 'currency.symbol');
     const minCurrency = parseFloat(container.getAttribute("cf-min-currency")) || 0;
     const maxCurrency = parseFloat(container.getAttribute("cf-max-currency")) || Number.MAX_SAFE_INTEGER;
     const jsonPath = container.getAttribute("cf-currency-path");
     const cfRequired = container.getAttribute("cf-required") === 'true';
 
     // Obtener mensajes desde cache
-    const requiredMessage = getCache('offices', 'country.currency.required_message');
-    const minimumRawMessage = getCache('offices', 'country.currency.minimum_message');
-    const maximumRawMessage = getCache('offices', 'country.currency.max_message');
+    const requiredMessage = getCache('offices', 'currency.required_message');
+    const minimumRawMessage = getCache('offices', 'currency.minimum_message');
+    const maximumRawMessage = getCache('offices', 'currency.max_message');
 
     const minimumMessage = minimumRawMessage
       ? `${minimumRawMessage} ${symbol}${(minCurrency / 100).toFixed(2)}`
@@ -1142,7 +1145,7 @@ document.addEventListener("data-ready", function() {
     }
   }
 
-  const components = document.querySelectorAll('friendly-url');
+  const components = document.querySelectorAll("[friendly-url]")
   
   components.forEach(component => {
     // Obtener atributos del componente
@@ -1310,15 +1313,15 @@ document.addEventListener("data-ready", function () {
     }
   }
 
-  const currencyCents = !!getCache('offices', 'country.currency.cents');
+  const currencyCents = !!getCache('offices', 'currency.cents');
   if (!currencyCents) {
     document.dispatchEvent(new Event('plan-calculator-cents'));
     return;
   }
 
   const planCalculators = document.querySelectorAll('[plan_calculator]');
-  const currency = getCache('offices', 'country.currency.ISO_4217');
-  const currencySymbol = getCache('offices', 'country.currency.symbol');
+  const currency = getCache('offices', 'currency.ISO_4217');
+  const currencySymbol = getCache('offices', 'currency.symbol');
 
   if (!currency) {
     console.error('No se pudo obtener la moneda');
@@ -1357,7 +1360,7 @@ document.addEventListener("data-ready", function () {
     hiddenInput.type = 'hidden';
     hiddenInput.name = jsonPath;
     hiddenInput.setAttribute('cf-json-path', jsonPath);
-    hiddenInput.setAttribute('data-required');
+    hiddenInput.setAttribute('data-required', 'true');
     hiddenInput.value = currentLevel;
     calculator.appendChild(hiddenInput);
 
@@ -2062,8 +2065,7 @@ function showErrorModal(message) {
       
       // Mostrar si: es "any" O está checked (para match específico)
       div.style.display = (isAny || isChecked) ? "block" : "none";
-      console.log(`🔄 ${value}: ${isChecked ? '🙉' : '🙈'}`);
-    });
+      });
 
 // 2. Manejo de grupos hijos y required (con soporte "any")
 document.querySelectorAll(`
@@ -2539,7 +2541,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
- <!--------------------- 🐞 Uploadcare 🐞  ---------------------> actualizar
+ <!--------------------- 🐞 Uploadcare 🐞  --------------------->
  
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
 
@@ -2549,7 +2551,7 @@ document.addEventListener("DOMContentLoaded", function () {
   import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
 
 
-document.addEventListener('data-ready', () => {
+document.addEventListener('DOMContentLoaded', () => {
 
  // Función segura para obtener valores desde localStorage.offices
         function getOffices(path) {
@@ -2567,7 +2569,7 @@ document.addEventListener('data-ready', () => {
   // Función para inicializar UploadCare con el locale correcto
   const initUploadCare = () => {
     try {
-      const lang = getOffices('country.lang.ISO_639');
+      const lang = getOffices('lang.ISO_639');
       
       if (lang === 'es') {
         UC.defineLocale('es', es);
