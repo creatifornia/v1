@@ -1,0 +1,1 @@
+document.addEventListener("DOMContentLoaded",(()=>{const e=new URLSearchParams(window.location.search).toString().length>0?"get-params":"get-creatifornia";document.dispatchEvent(new Event(e))}));

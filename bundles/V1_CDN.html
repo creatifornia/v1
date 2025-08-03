@@ -1,5 +1,10 @@
+<!-------------------------🐝 Params 🐝------------------------>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Params/hasParams.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Params/activatePlan.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Params/Events.js" defer></script>
+
 <!-------------------------🦩 Data 🦩------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Offices-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Offices-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Options-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Dynamic-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/DataAPI.js" defer></script>
@@ -7,7 +12,7 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Data/Events-v1.js" defer></script>
 
 <!------------------------🐳 Fill  🐳 ------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Text.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Text-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Inputs-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Direct.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Events.js" defer></script>
@@ -15,9 +20,9 @@
 <!------------------------🧱 Components 🧱------------------------>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Options.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Keywords.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Currency.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Currency-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/FriendlyURL-v1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/PlanCalculator-v1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/PlanCalculator-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Events.js" defer></script>
 
 
@@ -72,7 +77,7 @@ document.addEventListener('data-ready', () => {
   // Función para inicializar UploadCare con el locale correcto
   const initUploadCare = () => {
     try {
-      const lang = getOffices('country.lang.ISO_639');
+      const lang = getOffices('lang.ISO_639');
       
       if (lang === 'es') {
         UC.defineLocale('es', es);
