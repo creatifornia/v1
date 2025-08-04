@@ -1,0 +1,83 @@
+
+<!-- 🙉 Display-v2 🙉 -->
+
+<script type="text/javascript">
+document.addEventListener("data-ready", () => {
+  const comparisons = {
+    '==': (a, b) => a == b,
+    '===': (a, b) => a === b,
+    '!=': (a, b) => a != b,
+    '!==': (a, b) => a !== b,
+    '>': (a, b) => parseFloat(a) > parseFloat(b),
+    '<': (a, b) => parseFloat(a) < parseFloat(b),
+    '>=': (a, b) => parseFloat(a) >= parseFloat(b),
+    '<=': (a, b) => parseFloat(a) <= parseFloat(b),
+    'null': (a) => a == null,
+    '!null': (a) => a != null,
+    'true': (a) => Boolean(a),
+    'false': (a) => !Boolean(a)
+  };
+
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch {
+      return undefined;
+    }
+  }
+
+  const identificadores = [
+    {
+      attribute: "plan_id",
+      withThis: getCache("offices", "club.plan_id"),
+      behavior: "display",
+      order: 1
+    },
+    {
+      attribute: "inutil",
+      withThis: getCache("offices", "club.plan_id"),
+      behavior: "class",
+      order: 1
+    }
+  ];
+
+  // Agrupamos reglas por orden ascendente
+  identificadores
+    .sort((a, b) => a.order - b.order)
+    .forEach(({ attribute, withThis, behavior }) => {
+      const elements = document.querySelectorAll(`[${attribute}]`);
+
+      elements.forEach(el => {
+        const rawCompare = el.getAttribute(attribute)?.trim();
+        if (!rawCompare) return;
+
+        // Soporte para múltiples condiciones (separadas por &&)
+        const conditions = rawCompare.split("&&").map(expr => expr.trim());
+
+        const allMatch = conditions.every(cond => {
+          const match = cond.match(/^(===?|!==?|[<>]=?|null|!null|true|false)\s*'?(.*?)'?$/);
+          if (!match) return false;
+
+          const operator = match[1];
+          const compareVal = match[2] ?? '';
+          const comparator = comparisons[operator];
+
+          if (!comparator) return false;
+          return operator.includes('null') || operator === 'true' || operator === 'false'
+            ? comparator(withThis)
+            : comparator(withThis, compareVal);
+        });
+
+        // Acción según comportamiento
+        if (behavior === "display") {
+          el.style.display = allMatch ? "" : "none";
+        } else if (behavior === "class") {
+          el.classList.toggle(attribute, allMatch);
+        }
+      });
+    });
+
+  document.dispatchEvent(new Event("display-ready"));
+});
+</script>

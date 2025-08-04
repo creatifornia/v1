@@ -1,0 +1,1 @@
+!function(){const e=["display-ready","submit-ready","fill-ready","translation-finished","click-ready"];let n=new Set;function a(){e.every((e=>n.has(e)))&&(console.log("⏰🦉"),document.dispatchEvent(new Event("cf-loader-off")),n.clear())}e.forEach((e=>{document.addEventListener(e,(()=>{n.has(e)||(n.add(e),a())}))}))}();
