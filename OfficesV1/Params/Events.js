@@ -1,1 +1,0 @@
-!function(){const e=["activate-plan-ready"];let t=new Set,n=null;function a(){e.every((e=>t.has(e)))&&(clearTimeout(n),n=setTimeout((()=>{console.log("⏰🐝"),document.dispatchEvent(new Event("get-creatifornia")),t.clear()}),300))}e.forEach((e=>{document.addEventListener(e,(()=>{t.has(e)||(t.add(e),a())}))}))}();

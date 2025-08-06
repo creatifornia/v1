@@ -1,3 +1,143 @@
+<!-------------------------🐝 Params 🐝------------------------>
+
+<!-- 🔎 hasParams 🔎 -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const hasParams = new URLSearchParams(window.location.search).toString().length > 0;
+  const eventName = hasParams ? "get-params" : "get-creatifornia";
+  document.dispatchEvent(new Event(eventName));
+});
+</script>
+
+<!-- 🧹 cancelNew 🧹 -->
+<script>
+document.addEventListener("get-params", () => {
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Si NO existe el parámetro cancel_checkout_new, simplemente dispara el evento para continuar
+  if (!urlParams.has("cancel_checkout_new")) {
+    document.dispatchEvent(new Event("cancel_checkout_new"));
+    return;
+  }
+
+  const fullParams = window.location.search; // incluye el "?"
+  const apiURL = `/cancel_checkout_new${fullParams}`;
+
+  function cancelNew() {
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (!authToken) {
+      return;
+    }
+
+    xano.setAuthToken(authToken);
+
+    xano.patch(apiURL).then(response => {
+      if (response?.body?.status === 200) {
+        console.log("🧹");
+      } else {
+        console.warn("⚠️ cancel_checkout_new respondió sin éxito");
+      }
+
+      // En cualquier caso, continuar el flujo
+      document.dispatchEvent(new Event("cancel_checkout_new"));
+    }).catch(error => {
+      console.error("❌ Error en cancel_checkout_new:", error);
+      document.dispatchEvent(new Event("cancel_checkout_new"));
+    });
+  }
+
+  cancelNew();
+});
+</script>
+
+<!-- 🔑 newPlan 🔑 -->
+<script>
+document.addEventListener("get-params", () => {
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Si NO existe el parámetro new_plan, simplemente dispara el evento para continuar
+  if (!urlParams.has("new_plan")) {
+    document.dispatchEvent(new Event("new_plan"));
+    return;
+  }
+
+  const fullParams = window.location.search; // incluye el "?"
+  const apiURL = `/new_plan${fullParams}`;
+
+  function showErrorModal(message) {
+    alert(message); // Puedes reemplazar esto con un modal personalizado
+    document.dispatchEvent(new Event("new_plan")); // Aún así completar el ciclo si hay error
+  }
+
+  function newPlan() {
+    const authToken = localStorage.getItem("AuthToken");
+
+    if (!authToken) {
+      console.warn("❌ No hay AuthToken, mostrando error");
+      showErrorModal("Your account will be verified within a maximum period of 48 hours.");
+      return;
+    }
+
+    xano.setAuthToken(authToken);
+
+    xano.patch(apiURL).then(response => {
+      if (response?.body?.redirect_url) {
+        console.log("✅", response.body.redirect_url);
+        window.location.href = response.body.redirect_url;
+      } else {
+        console.warn("❌ No se recibió redirect_url en la respuesta");
+        showErrorModal("Your account will be verified within a maximum period of 48 hours.");
+      }
+    }).catch((err) => {
+      console.error("❌ Error en la solicitud PATCH:", err);
+      showErrorModal("Your account will be verified within a maximum period of 48 hours.");
+    });
+  }
+
+  newPlan();
+});
+</script>
+
+
+<!-- ⏰ Events: params ⏰ --> 
+<script> 
+(function() {
+      const REQUIRED_EVENTS = [
+      "new_plan",
+      "cancel_checkout_new"      
+    ];
+
+  let receivedEvents = new Set();
+  let readyTimer = null;
+
+  function checkAllReady() {
+    if (REQUIRED_EVENTS.every(event => receivedEvents.has(event))) {
+      clearTimeout(readyTimer);
+      readyTimer = setTimeout(() => {
+        console.log("⏰🐝");
+        document.dispatchEvent(new Event("get-creatifornia"));
+        resetCoordinator();
+      }, 300);
+    }
+  }
+
+  function resetCoordinator() {
+    receivedEvents.clear();
+  }
+
+  REQUIRED_EVENTS.forEach(eventName => {
+    document.addEventListener(eventName, () => {
+      if (!receivedEvents.has(eventName)) {
+        receivedEvents.add(eventName);
+        checkAllReady();
+      }
+    });
+  });
+})();
+</script>
+
+
 <!-------------------------🦩 Data 🦩------------------------>
 
 <!-- 💼 Offices 💼 -->
@@ -13,7 +153,6 @@
   const RETRY_INTERVAL = 200; // ms
   const WAIT_TIME_AFTER_FAILURE = 30000; // 30 seconds
 
-  document.addEventListener("DOMContentLoaded", initCreatifornia);
   document.addEventListener("get-creatifornia", initCreatifornia);
 
   function initCreatifornia() {
@@ -1771,6 +1910,40 @@ document.addEventListener("cf-update-form", InitializationModule.updateSingleFor
 
 <!------------------------🦉 Display 🦉  ------------------------>
 
+<!-- 🐬 Click-v2 🐬 -->
+<script>
+document.addEventListener('inputs-ready', () => {
+  document.querySelectorAll('[cl]').forEach(trigger => {
+    const rawValue = trigger.getAttribute('cl')?.trim();
+
+    if (!rawValue) return;
+
+    trigger.addEventListener('click', () => {
+      let ids = [];
+
+      if (rawValue.startsWith("'")) {
+        // Múltiples IDs, con formato: 'id1' 'id2' 'id3'
+        ids = rawValue.match(/'([^']+)'/g)?.map(id => id.replace(/'/g, '')) || [];
+      } else {
+        // Un solo ID sin comillas
+        ids = [rawValue];
+      }
+
+      ids.forEach(id => {
+        const target = document.getElementById(id);
+        if (target) {
+          target.click();
+          target.focus();
+        }
+      });
+    });
+  });
+
+  // Disparar evento de finalización
+  document.dispatchEvent(new Event('click-ready'));
+});
+</script>
+
 <!-- 🌍 Translate 🌍 -->
 <script>
 document.addEventListener('translate-data-ready', () => {
@@ -1824,10 +1997,10 @@ document.addEventListener('translate-not-needed', () => {
 });
 </script>
 
-<!-- 🙉 Display 🙉 -->
-<script type="text/javascript">
-  document.addEventListener("data-ready", handleDisplayLogic);
+<!-- 🙉 Display-v2 🙉 -->
 
+<script type="text/javascript">
+document.addEventListener("inputs-ready", () => {
   const comparisons = {
     '==': (a, b) => a == b,
     '===': (a, b) => a === b,
@@ -1843,61 +2016,70 @@ document.addEventListener('translate-not-needed', () => {
     'false': (a) => !Boolean(a)
   };
 
-  function handleDisplayLogic() {
-    const elements = document.querySelectorAll("[cf-display-key]");
-    const dataCache = new Map();
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch {
+      return undefined;
+    }
+  }
 
-    elements.forEach((el) => {
-      try {
-        const key = el.getAttribute("cf-display-key");
-        const path = el.getAttribute("cf-display-path");
-        let compareExpr = el.getAttribute("cf-display-compare")?.trim();
+  const identificadores = [
+    {
+      attribute: "ds-plan",
+      withThis: getCache("offices", "club.plan_id"),
+      behavior: "display",
+      order: 1
+    },
+    {
+      attribute: "ds-inutil",
+      withThis: getCache("offices", "club.plan_id"),
+      behavior: "class",
+      order: 1
+    }
+  ];
 
-        if (!key || !path || !compareExpr) {
-          console.warn(`Element missing required attributes:`, el);
-          return;
+  // Agrupamos reglas por orden ascendente
+  identificadores
+    .sort((a, b) => a.order - b.order)
+    .forEach(({ attribute, withThis, behavior }) => {
+      const elements = document.querySelectorAll(`[${attribute}]`);
+
+      elements.forEach(el => {
+        const rawCompare = el.getAttribute(attribute)?.trim();
+        if (!rawCompare) return;
+
+        // Soporte para múltiples condiciones (separadas por &&)
+        const conditions = rawCompare.split("&&").map(expr => expr.trim());
+
+        const allMatch = conditions.every(cond => {
+          const match = cond.match(/^(===?|!==?|[<>]=?|null|!null|true|false)\s*'?(.*?)'?$/);
+          if (!match) return false;
+
+          const operator = match[1];
+          const compareVal = match[2] ?? '';
+          const comparator = comparisons[operator];
+
+          if (!comparator) return false;
+          return operator.includes('null') || operator === 'true' || operator === 'false'
+            ? comparator(withThis)
+            : comparator(withThis, compareVal);
+        });
+
+        // Acción según comportamiento
+        if (behavior === "display") {
+          el.style.display = allMatch ? "" : "none";
+        } else if (behavior === "class") {
+          el.classList.toggle(attribute, allMatch);
         }
-
-        // Cache de datos
-        if (!dataCache.has(key)) {
-          try {
-            const storedData = localStorage.getItem(key);
-            dataCache.set(key, storedData ? JSON.parse(storedData) : null);
-          } catch (e) {
-            console.error(`Error parsing data for key ${key}:`, e);
-            dataCache.set(key, null);
-          }
-        }
-
-        // Obtener valor
-        const actualValue = path.split('.').reduce(
-          (obj, prop) => (obj?.[prop] !== undefined) ? obj[prop] : null,
-          dataCache.get(key)
-        );
-
-        // Parseo seguro con comillas simples
-        const operatorMatch = compareExpr.match(/^(===?|!==?|[<>]=?|null|!null|true|false)(?:\s*'(.*?)')?/);
-        
-        const operator = operatorMatch[1];
-        let compareValue = operatorMatch[2] || '';
-
-        // Comparación
-        const comparator = comparisons[operator];
-        if (!comparator) {
-          console.warn(`Unsupported operator: "${operator}"`, el);
-          return;
-        }
-
-        el.style.display = comparator(actualValue, compareValue) ? "" : "none";
-
-      } catch (error) {
-        console.error("Error processing element:", el, error);
-      }
+      });
     });
 
-    document.dispatchEvent(new Event("display-ready"));
-  }
+  document.dispatchEvent(new Event("display-ready"));
+});
 </script>
+
 
 
 <!--⏰ Events: cf-loader-off ⏰ --->
@@ -1907,7 +2089,8 @@ document.addEventListener('translate-not-needed', () => {
       "display-ready",
       "submit-ready",        
       "fill-ready",
-      "translation-finished"
+      "translation-finished",
+      "click-ready"
                 ];
 
     let receivedEvents = new Set();
@@ -2487,26 +2670,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- 🐬 Click 🐬 -->
-<script>
-  // Espera a que el evento 'inputs-ready' sea disparado desde OTRO lugar
-  document.addEventListener('inputs-ready', () => {
-    
-    // Configura el mirror click para todos los triggers
-    document.querySelectorAll('[cf-click-trigger]').forEach(trigger => {
-      const targetId = trigger.getAttribute('cf-click-trigger');
-      
-      trigger.addEventListener('click', () => {
-        // Activa TODOS los elementos target correspondientes
-        document.querySelectorAll(`[cf-click-target="${targetId}"]`).forEach(target => {
-          target.click();
-          target.focus(); // Asegura que los inputs reciban foco
-        });
-      });
-    });
-    
-  });
-</script>
+
+
 
 <!-- 🌴Refresh🌴 -->
 <script>
