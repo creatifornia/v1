@@ -561,7 +561,7 @@ function initTranslate() {
 }
 </script>
 
-<!--⏰ Events: data-ready ⏰ --> 
+<!--⏰🦩 Events: data-ready ⏰🦩 --> 
 <script> //añadir dvento de actualizar cache si es necesario
   (function() {
     const REQUIRED_EVENTS = [
@@ -772,7 +772,7 @@ document.addEventListener('data-ready', () => {
 });
 </script>
 
-<!--⏰ Events: fill-ready ⏰ -->
+<!--⏰🐳 Events: fill-ready ⏰🐳 -->
 <script>
   (function() {
     const REQUIRED_EVENTS = [
@@ -1495,6 +1495,7 @@ document.addEventListener("data-ready", function () {
     let currentLevel = 1;
     let currentAmount = firstUnit;
 
+    // Crear el input oculto
     const hiddenInput = document.createElement('input');
     hiddenInput.type = 'hidden';
     hiddenInput.name = jsonPath;
@@ -1503,6 +1504,7 @@ document.addEventListener("data-ready", function () {
     hiddenInput.value = currentLevel;
     calculator.appendChild(hiddenInput);
 
+    // Función para actualizar UI y sincronizar hiddenInput
     function updateUI() {
       if (storageBaseElement) {
         storageBaseElement.textContent = storageBase * currentLevel;
@@ -1519,8 +1521,13 @@ document.addEventListener("data-ready", function () {
       if (decreaseButton) {
         decreaseButton.classList.toggle('inutil', currentLevel === 1);
       }
+
+      // Sincronizar el hidden input con el nivel actual
+      hiddenInput.value = currentLevel;
+      
     }
 
+    // Eventos de decremento
     if (decreaseButton) {
       decreaseButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1532,6 +1539,7 @@ document.addEventListener("data-ready", function () {
       });
     }
 
+    // Eventos de incremento
     if (increaseButton) {
       increaseButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1545,12 +1553,14 @@ document.addEventListener("data-ready", function () {
       });
     }
 
+    // Inicializar UI
     updateUI();
   });
 
   document.dispatchEvent(new Event('plan-calculator-ready'));
 });
 </script>
+
 
 <!--⏰ Events: inputs-ready⏰ -->
 <script>

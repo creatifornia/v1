@@ -1,52 +1,658 @@
-<!-- 🌍 Translate-Binding 🌍 -->
+
+<!-- 🦧 Options 🦧 -->
 <script>
-document.addEventListener('translate-data-ready', () => {
+(function(){
+  'use strict';
 
-  // Función robusta para obtener datos desde localStorage
-  function getCache(key, path = '') {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return undefined;
-
-      const data = JSON.parse(raw);
-      if (!path) return data;
-
-      return path.split('.').reduce((acc, part) => acc?.[part], data);
-    } catch (e) {
-      console.warn(`⚠️ Error accediendo a ${key}${path ? '.' + path : ''}`);
-      return undefined;
-    }
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+  function getNested(obj, path) {
+    if (!obj || !path) return undefined;
+    return path.split('.').reduce((acc, p) => (acc && acc[p] !== undefined) ? acc[p] : undefined, obj);
+  }
+  function showErrorModal(message) {
+    if (typeof showToast === 'function') showToast(message, 'error');
+    else if (typeof alert === 'function') alert(message);
+    else console.error(message);
   }
 
-  // Función principal de traducción
-  function applyTranslations() {
-    try {
-      const translateData = getCache('translate') || {};
+  /* ---------- State ---------- */
+  const COMPONENTS = new Map(); // state interno por component-id
 
-      const elements = document.querySelectorAll('[cf]');
+  /* ---------- Builder: construcción de todos los componentes ---------- */
+  function buildAllComponents() {
+    const components = document.querySelectorAll('[component-id]');
+    components.forEach(component => {
+      try { buildComponent(component); }
+      catch (err) { console.error('Error building component', component.getAttribute('component-id'), err); }
+    });
 
-      elements.forEach(element => {
-        const componentName = element.getAttribute('cf');
-        if (translateData?.[componentName]) {
-          const hasHTML = element.innerHTML.trim() !== element.textContent.trim();
-          element[hasHTML ? 'innerHTML' : 'textContent'] = translateData[componentName];
+    // Después de construir todo, notificamos que los inputs están listos (se inicializan forms una vez).
+    document.dispatchEvent(new Event('options-builder-ready'));
+  }
+
+  function buildComponent(component) {
+    // Leer atributos (estrictamente los nuevos)
+    const componentId = component.getAttribute('component-id');
+    const storageKey = component.getAttribute('storage-key');
+    const storagePath = component.getAttribute('storage-path'); // sin .options
+    const jsonPath = component.getAttribute('json-path');
+    const parent = component.getAttribute('parent') || ''; // '' => es parent
+    const hasDeps = component.getAttribute('has-deps') === 'true';
+    const valueKey = component.getAttribute('value-key');
+    const labelKey = component.getAttribute('label-key');
+    const tagKey = component.getAttribute('tag-key');
+    const idKey = component.getAttribute('id-key');
+    const clickKey = component.getAttribute('click-key'); // opcional
+    const fClass = component.getAttribute('f-class') || '';
+    const lClass = component.getAttribute('l-class') || '';
+    const continueButtonId = component.getAttribute('continue-button-id') || null;
+    const checkboxLimit = component.getAttribute('checkbox-limit') ? parseInt(component.getAttribute('checkbox-limit')) : null;
+    const inputType = (component.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const groupComponentId = component.getAttribute('group-component-id') || componentId; // name para radios
+
+    // Validaciones mínimas
+    if (!componentId || !storageKey || !storagePath || !jsonPath || !valueKey || !labelKey) {
+      console.error(`component "${componentId}": faltan atributos requeridos.`);
+      return;
+    }
+
+    // role="group" debe existir en el markup
+    const groupEl = component.querySelector('[role="group"]');
+    if (!groupEl) {
+      console.error(`component "${componentId}": falta elemento con role="group".`);
+      return;
+    }
+
+    // Plantilla: c-field dentro del componente (obligatoria)
+    const fieldTemplate = component.querySelector('[c-field]');
+    if (!fieldTemplate) {
+      console.error(`component "${componentId}": falta plantilla [c-field].`);
+      return;
+    }
+
+    // Leer localStorage
+    const raw = localStorage.getItem(storageKey);
+    const storedObj = safeJSONParse(raw, null);
+    if (!storedObj) {
+      console.warn(`component "${componentId}": no hay datos válidos en localStorage["${storageKey}"].`);
+      return;
+    }
+
+    const optionsList = getNested(storedObj, `${storagePath}.options`);
+    if (!Array.isArray(optionsList) || optionsList.length === 0) {
+      console.warn(`component "${componentId}": no se encontró ${storagePath}.options o está vacío.`);
+      return;
+    }
+
+    // Hidden input (cf-json-path)
+    let hidden = component.querySelector(`input[type="hidden"][cf-json-path="${jsonPath}"]`);
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.setAttribute('cf-json-path', jsonPath);
+      hidden.name = jsonPath;
+      component.appendChild(hidden);
+    }
+
+    // Si es parent, siempre tendrá data-required y data-required-message
+    if (!parent) {
+      hidden.setAttribute('data-required', '');
+      const reqMsg = getNested(storedObj, `${storagePath}.message`) || 'Selecciona una opción';
+      hidden.setAttribute('data-required-message', reqMsg);
+    } else {
+      hidden.removeAttribute('data-required');
+    }
+
+    // Inicializar hidden según tipo
+    if (inputType === 'checkbox') hidden.value = hidden.value || '[]';
+    else hidden.value = hidden.value || '{}';
+
+    // LIMPIAR groupEl: mantener solo la plantilla si está dentro; para crear desde ahí clonaremos
+    // Asumimos la plantilla está dentro del component; reubicamos temporalmente para clonar
+    // Para simplicidad: vaciamos el group y volveremos a insertar clones. (La plantilla está en el componente y la clonamos)
+    while (groupEl.firstChild) groupEl.removeChild(groupEl.firstChild);
+
+    // Crear clones de c-field por cada opción
+    optionsList.forEach(item => {
+      const clone = fieldTemplate.cloneNode(true);
+
+      const tagEl = clone.querySelector('[c-tag]');
+      const labelEl = clone.querySelector('[c-label]');
+      const nativeInput = clone.querySelector('[native-button], input[type="checkbox"], input[type="radio"], input');
+
+      const labelText = String(item[labelKey] ?? '');
+      const tagText = String(item[tagKey] ?? '').trim();
+      const valText = String(item[valueKey] ?? '');
+      const idVal = idKey ? (item[idKey] !== undefined ? String(item[idKey]) : null) : null;
+      const clickVal = clickKey ? (item[clickKey] !== undefined ? String(item[clickKey]) : null) : null;
+
+      if (labelEl) labelEl.textContent = labelText;
+      if (tagEl) {
+        if (tagText) { tagEl.textContent = tagText; tagEl.style.display = ''; }
+        else { tagEl.textContent = ''; tagEl.style.display = 'none'; }
+      }
+
+      if (nativeInput) {
+        nativeInput.type = inputType;
+        nativeInput.setAttribute('data-opt-value', valText);
+        nativeInput.setAttribute('data-opt-label', labelText);
+        if (idVal) nativeInput.setAttribute('data-opt-id', idVal);
+        if (tagText) nativeInput.setAttribute('data-opt-tag', tagText);
+        if (clickVal) nativeInput.setAttribute('data-opt-click', clickVal);
+
+        if (inputType === 'radio') nativeInput.name = groupComponentId;
+      } else {
+        console.warn(`component "${componentId}": clone c-field no contiene native-button ni input detectable.`);
+      }
+
+      // Si la option tiene clickVal: agregar atributo cl al field (según solicitaste)
+      if (clickVal) {
+        clone.setAttribute('cl', clickVal);
+      }
+
+      groupEl.appendChild(clone);
+    });
+
+    // Registrar listener delegado (solo uno por group)
+    if (!groupEl._hasDelegate) {
+      groupEl.addEventListener('change', (evt) => onGroupChange(evt, componentId));
+      groupEl._hasDelegate = true;
+    }
+
+    // Guardar estado mínimo
+    COMPONENTS.set(componentId, {
+      componentId,
+      componentEl: component,
+      storageKey,
+      storagePath,
+      jsonPath,
+      parent,
+      hasDeps,
+      valueKey,
+      labelKey,
+      tagKey,
+      idKey,
+      clickKey,
+      fClass,
+      lClass,
+      continueButtonId,
+      checkboxLimit,
+      inputType,
+      groupEl,
+      fieldTemplate,
+      hiddenEl: hidden,
+      currentValue: inputType === 'checkbox' ? [] : {} // inicial
+    });
+
+    // Sincronizar UI desde hidden si ya hay valor
+    syncUIFromHidden(componentId);
+    // Actualizar estado del continue button
+    updateContinueButton(componentId);
+  }
+
+  /* ---------- Sincronizar UI desde hidden (inicial) ---------- */
+  function syncUIFromHidden(componentId) {
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+    const { hiddenEl, inputType, groupEl, fClass, lClass } = state;
+    const raw = hiddenEl.value;
+    if (!raw) return;
+    const parsed = safeJSONParse(raw, null);
+
+    // limpiar marcas
+    groupEl.querySelectorAll('[c-field]').forEach(fe => {
+      if (fClass) fe.classList.remove(fClass);
+      const lab = fe.querySelector('[c-label]');
+      if (lab && lClass) lab.classList.remove(lClass);
+      const inp = fe.querySelector('[native-button], input');
+      if (inp) inp.checked = false;
+    });
+
+    if (inputType === 'checkbox' && Array.isArray(parsed)) {
+      parsed.forEach(item => {
+        groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+          if (String(inp.getAttribute('data-opt-value')) === String(item.value)) {
+            inp.checked = true;
+            const fe = inp.closest('[c-field]');
+            fe && fClass && fe.classList.add(fClass);
+            const lab = fe && fe.querySelector('[c-label]');
+            lab && lClass && lab.classList.add(lClass);
+          }
+        });
+      });
+      state.currentValue = parsed.slice();
+    } else if (inputType === 'radio' && parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+      groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+        if (String(inp.getAttribute('data-opt-value')) === String(parsed.value)) {
+          inp.checked = true;
+          const fe = inp.closest('[c-field]');
+          fe && fClass && fe.classList.add(fClass);
+          const lab = fe && fe.querySelector('[c-label]');
+          lab && lClass && lab.classList.add(lClass);
         }
       });
-
-      console.log("🌍 Translation Finished");
-    } catch (error) {
-      console.error('❌ Translation binding error:', error);
+      state.currentValue = parsed;
+    } else {
+      state.currentValue = inputType === 'checkbox' ? [] : {};
     }
-
-    // Emitir evento final
-    document.dispatchEvent(new Event('translation-finished'));
   }
 
-  applyTranslations();
-});
+  /* ---------- Cambio delegado en el role=group ---------- */
+  function onGroupChange(evt, componentId) {
+    const input = evt.target;
+    if (!input || !(input instanceof HTMLInputElement)) return;
 
-document.addEventListener('translate-not-needed', () => {
-  document.dispatchEvent(new Event('translation-finished'));
-  console.log("🌍 ES");
-});
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+
+    const { inputType, hiddenEl, checkboxLimit, fClass, lClass, groupEl } = state;
+    const value = input.getAttribute('data-opt-value');
+    const label = input.getAttribute('data-opt-label') || '';
+    const id = input.getAttribute('data-opt-id') || null;
+    const isChecked = input.checked;
+
+    if (inputType === 'checkbox') {
+      // parse current
+      let current = [];
+      try { current = JSON.parse(hiddenEl.value || '[]'); }
+      catch { current = []; }
+      current = Array.isArray(current) ? current : [];
+
+      const exists = current.some(it => String(it.value) === String(value));
+      if (isChecked && !exists) {
+        if (checkboxLimit && current.length >= checkboxLimit) {
+          showErrorModal(`Selecciona máximo ${checkboxLimit} opciones.`);
+          input.checked = false;
+          return;
+        }
+        const entry = { value, label };
+        if (id) entry.id = id;
+        current.push(entry);
+      } else if (!isChecked && exists) {
+        current = current.filter(it => String(it.value) !== String(value));
+      }
+
+      // Actualizar clases UI
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.toggle(fClass, isChecked);
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.toggle(lClass, isChecked);
+
+      // Serializar
+      hiddenEl.value = JSON.stringify(current);
+      state.currentValue = current.slice();
+
+      // Emitir eventos
+      emitOptionEvents('checkbox', state, input, { value, label, id, isChecked, currentValue: current });
+
+    } else if (inputType === 'radio') {
+      const entry = { value, label };
+      if (id) entry.id = id;
+
+      // quitar clases a todos y aplicar al seleccionado
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        fClass && fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        lab && lClass && lab.classList.remove(lClass);
+      });
+
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.add(fClass);
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.add(lClass);
+
+      hiddenEl.value = JSON.stringify(entry);
+      state.currentValue = Object.assign({}, entry);
+
+      emitOptionEvents('radio', state, input, { value, label, id, isChecked: true, currentValue: state.currentValue });
+    }
+
+    // NOTA: no disparamos cf-update-form por cada cambio para evitar reinstalaciones innecesarias.
+    // Las forms se inicializan una vez vía 'inputs-ready' al finalizar el builder.
+    // Dependencias se manejan por el handler general escuchando los eventos emitidos.
+    // Actualizamos continue-button localmente
+    updateContinueButton(componentId);
+  }
+
+  /* ---------- Emitir eventos (genérico + específicos) ---------- */
+  function emitOptionEvents(type, state, input, payload) {
+    const detail = {
+      componentId: state.componentId,
+      jsonPath: state.jsonPath,
+      type,
+      value: payload.value,
+      label: payload.label,
+      id: payload.id,
+      isChecked: payload.isChecked,
+      currentValue: payload.currentValue
+    };
+
+    document.dispatchEvent(new CustomEvent('option-change', { detail }));
+    if (type === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+    else if (type === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+  }
+
+  /* ---------- Continue button toggle ---------- */
+  function updateContinueButton(componentId) {
+    const state = COMPONENTS.get(componentId);
+    if (!state || !state.continueButtonId) return;
+    const btn = document.getElementById(state.continueButtonId);
+    if (!btn) return;
+    const raw = state.hiddenEl.value;
+    const isEmpty = raw === '[]' || raw === '{}' || (typeof raw === 'string' && raw.trim() === '');
+    if (!isEmpty) btn.classList.remove('inutil');
+    else btn.classList.add('inutil');
+  }
+
+  /* ---------- Inicialización automática ---------- */
+  function init() {
+    buildAllComponents();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
+  // Exponer para debugging opcional (no requerido)
+  window.__OptionsBuilder = { COMPONENTS };
+})();
+</script>
+
+
+
+<!-- 🟦 handler 🟦 -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+  function showErrorModal(message) {
+    if (typeof showToast === 'function') showToast(message, 'error');
+    else if (typeof alert === 'function') alert(message);
+    else console.error(message);
+  }
+
+  /* ---------- Limpieza de hidden/UI para un hidden input dado ---------- */
+  function clearHiddenAndUI(hiddenEl) {
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      // heurística: limpiar a array vacío
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const inputType = (ancestorComp.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    // limpiar valor
+    if (inputType === 'checkbox') hiddenEl.value = '[]';
+    else hiddenEl.value = '{}';
+
+    // limpiar UI del componente
+    if (groupEl) {
+      groupEl.querySelectorAll('[native-button], input').forEach(i => { try { i.checked = false; } catch(e){} });
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+
+    // actualizar continue button del componente afectado (si existe)
+    const continueId = ancestorComp.getAttribute('continue-button-id');
+    if (continueId) {
+      const btn = document.getElementById(continueId);
+      if (btn) {
+        const isEmpty = hiddenEl.value === '[]' || hiddenEl.value === '{}' || (typeof hiddenEl.value === 'string' && hiddenEl.value.trim() === '');
+        if (isEmpty) btn.classList.add('inutil'); else btn.classList.remove('inutil');
+      }
+    }
+
+    // disparar cf-update-form NO es necesario (forms leen DOM al submit)
+  }
+
+  /* ---------- Handler para checkbox: multiple matches ---------- */
+  document.addEventListener('valid-change-checkbox', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
+    const currentValues = currentValue.map(it => String(it.value));
+
+    // DISPLAY: mostrar nodos con match en currentValues, ocultar el resto
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && currentValues.includes(String(match))) node.style.display = '';
+      else node.style.display = 'none';
+    });
+
+    // REQUIRED: para cada node required-depend, si algún match coincide => set data-required en inputs cf-json-path dentro del nodo
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      const shouldSet = match && currentValues.includes(String(match));
+      if (shouldSet) {
+        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
+      } else {
+        // remover y limpiar
+        hiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUI(h);
+        });
+      }
+    });
+  });
+
+  /* ---------- Handler para radio: single match ---------- */
+  document.addEventListener('valid-change-radio', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const selectedValue = detail.value !== undefined ? String(detail.value) : null;
+
+    // DISPLAY: ocultar todos excepto los que coincidan con selectedValue
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && selectedValue !== null && String(match) === selectedValue) node.style.display = '';
+      else node.style.display = 'none';
+    });
+
+    // REQUIRED: setear solo los que coincidan; limpiar los otros
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      if (match && selectedValue !== null && String(match) === selectedValue) {
+        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
+      } else {
+        hiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUI(h);
+        });
+      }
+    });
+  });
+
+  // Exportar funciones para debugging opcional
+  window.__OptionsHandler = { clearHiddenAndUI };
+
+})();
+</script>
+
+<!-- 🟦 Checkbox 🟦 -->
+ <script>
+(function(){
+  'use strict';
+
+  // Utiles
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  function clearHiddenAndUIForAncestor(hiddenEl) {
+    // hiddenEl: input[cf-json-path] que vamos a limpiar
+    // Buscamos el componente ancestor y limpiamos su hidden / UI según atributos.
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      // Si no pertenece a componente manejado, limpiamos por tipo heurístico
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const compId = ancestorComp.getAttribute('component-id');
+    const inputType = ancestorComp.getAttribute('input-type') || 'checkbox';
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    if (inputType === 'checkbox') {
+      hiddenEl.value = '[]';
+    } else {
+      hiddenEl.value = '{}';
+    }
+
+    if (groupEl) {
+      // desmarcar inputs y remover clases en UI
+      groupEl.querySelectorAll('[native-button], input').forEach(i => {
+        try { i.checked = false; } catch(e){}
+      });
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+
+
+  }
+
+  // Checkbox handler: escuchar evento emitido por el builder
+  document.addEventListener('valid-change-checkbox', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
+    // extraemos valores simples para comparación
+    const currentValues = currentValue.map(it => String(it.value));
+
+    // DISPLAY: mostrar nodos cuyo match esté en currentValues; ocultar el resto
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && currentValues.includes(String(match))) {
+        node.style.display = '';
+      } else {
+        node.style.display = 'none';
+      }
+    });
+
+    // REQUIRED: para cada nodo required-depend, si alguno de los currentValues coincide -> add data-required
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const targetHiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      const shouldSet = match && currentValues.includes(String(match));
+      if (shouldSet) {
+        targetHiddenInputs.forEach(h => h.setAttribute('data-required', ''));
+      } else {
+        // remover data-required y limpiar sus hidden inputs y UI asociada
+        targetHiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUIForAncestor(h);
+        });
+      }
+    });
+
+
+  });
+})();
+</script>
+
+
+
+<!-- 🟦 Radio 🟦 -->
+ <script>
+(function(){
+  'use strict';
+
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  function clearHiddenAndUIForAncestor(hiddenEl) {
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const inputType = ancestorComp.getAttribute('input-type') || 'checkbox';
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    if (inputType === 'checkbox') hiddenEl.value = '[]';
+    else hiddenEl.value = '{}';
+
+    if (groupEl) {
+      groupEl.querySelectorAll('[native-button], input').forEach(i => { try { i.checked = false; } catch(e){} });
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+  }
+
+  // Radio handler: escucha evento del builder
+  document.addEventListener('valid-change-radio', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const selectedValue = detail.value !== undefined ? String(detail.value) : null;
+
+    // DISPLAY: ocultar todos los nodes display-depend except those matching selectedValue
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && selectedValue !== null && String(match) === selectedValue) {
+        node.style.display = '';
+      } else {
+        node.style.display = 'none';
+      }
+    });
+
+    // REQUIRED: primero limpiar todos (remove) y luego setear sólo los que coinciden
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const targetHiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      if (match && selectedValue !== null && String(match) === selectedValue) {
+        // set data-required
+        targetHiddenInputs.forEach(h => h.setAttribute('data-required',''));
+      } else {
+        // remove data-required and clear values + UI
+        targetHiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUIForAncestor(h);
+        });
+      }
+    });
+
+
+  });
+})();
 </script>
