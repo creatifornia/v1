@@ -1,0 +1,887 @@
+<!-- 🦧 BuildOptions-v1-1.js 🦧 -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+  function getNested(obj, path) {
+    if (!obj || !path) return undefined;
+    return path.split('.').reduce((acc, p) => (acc && acc[p] !== undefined) ? acc[p] : undefined, obj);
+  }
+  function showErrorModal(message) {
+    if (typeof showToast === 'function') showToast(message, 'error');
+    else if (typeof alert === 'function') alert(message);
+    else console.error(message);
+  }
+
+  /* ---------- State ---------- */
+  const COMPONENTS = new Map();
+
+  /* ---------- Builder: construcción de todos los componentes ---------- */
+  function buildAllComponents() {
+    const components = document.querySelectorAll('[component-id]');
+    components.forEach(component => {
+      try { buildComponent(component); }
+      catch (err) { console.error('Error building component', component.getAttribute('component-id'), err); }
+    });
+
+    // 🔹 Al terminar, avisamos que todo está listo
+    document.dispatchEvent(new Event('options-builder-ready'));
+  }
+
+  function buildComponent(component) {
+    const componentId = component.getAttribute('component-id');
+    const storageKey = component.getAttribute('storage-key');
+    const storagePath = component.getAttribute('storage-path');
+    const jsonPath = component.getAttribute('json-path');
+    const parent = component.getAttribute('parent') || '';
+    const hasDeps = component.getAttribute('has-deps') === 'true';
+    const valueKey = component.getAttribute('value-key');
+    const labelKey = component.getAttribute('label-key');
+    const tagKey = component.getAttribute('tag-key');
+    const idKey = component.getAttribute('id-key');
+    const clickKey = component.getAttribute('click-key') || '';
+    const fClass = component.getAttribute('f-class') || '';
+    const lClass = component.getAttribute('l-class') || '';
+    const continueButtonId = component.getAttribute('continue-button-id') || null;
+    const checkboxLimit = component.getAttribute('checkbox-limit') ? parseInt(component.getAttribute('checkbox-limit')) : null;
+    const inputType = (component.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const groupComponentId = component.getAttribute('group-component-id') || componentId;
+
+    if (!componentId || !storageKey || !storagePath || !jsonPath || !valueKey || !labelKey) {
+      console.error(`component "${componentId}": faltan atributos requeridos.`);
+      return;
+    }
+
+    const groupEl = component.querySelector('[role="group"]');
+    if (!groupEl) {
+      console.error(`component "${componentId}": falta elemento con role="group".`);
+      return;
+    }
+
+    const fieldTemplate = component.querySelector('[c-field]');
+    if (!fieldTemplate) {
+      console.error(`component "${componentId}": falta plantilla [c-field].`);
+      return;
+    }
+
+    const raw = localStorage.getItem(storageKey);
+    const storedObj = safeJSONParse(raw, null);
+    if (!storedObj) {
+      console.warn(`component "${componentId}": no hay datos válidos en localStorage["${storageKey}"].`);
+      return;
+    }
+
+    const optionsList = getNested(storedObj, `${storagePath}.options`);
+    if (!Array.isArray(optionsList) || optionsList.length === 0) {
+      console.warn(`component "${componentId}": no se encontró ${storagePath}.options o está vacío.`);
+      return;
+    }
+
+    let hidden = component.querySelector(`input[type="hidden"][cf-json-path="${jsonPath}"]`);
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.setAttribute('cf-json-path', jsonPath);
+      hidden.name = jsonPath;
+      component.appendChild(hidden);
+    }
+
+    if (continueButtonId != null) {
+      hidden.setAttribute('continue-trigger', continueButtonId);  
+    }
+
+    if (!parent) {
+      hidden.setAttribute('data-required', '');
+      const reqMsg = getNested(storedObj, `${storagePath}.message`) || 'Selecciona una opción';
+      hidden.setAttribute('data-required-message', reqMsg);
+    } else {
+      hidden.removeAttribute('data-required');
+    }
+
+    if (inputType === 'checkbox') hidden.value = hidden.value || '[]';
+    else hidden.value = hidden.value || '{}';
+
+    while (groupEl.firstChild) groupEl.removeChild(groupEl.firstChild);
+
+    optionsList.forEach(item => {
+      const clone = fieldTemplate.cloneNode(true);
+      const tagEl = clone.querySelector('[c-tag]');
+      const labelEl = clone.querySelector('[c-label]');
+      const nativeInput = clone.querySelector('[native-button], input[type="checkbox"], input[type="radio"], input');
+
+      const labelText = String(item[labelKey] ?? '');
+      const tagText = String(item[tagKey] ?? '').trim();
+      const valText = String(item[valueKey] ?? '');
+      const idVal = idKey ? (item[idKey] !== undefined ? String(item[idKey]) : null) : null;
+      const clickVal = clickKey ? (item[clickKey] !== undefined ? String(item[clickKey]) : null) : null;
+
+      if (labelEl) labelEl.textContent = labelText;
+      if (tagEl) {
+        if (tagText) { tagEl.textContent = tagText; tagEl.style.display = ''; }
+        else { tagEl.textContent = ''; tagEl.style.display = 'none'; }
+      }
+
+      if (nativeInput) {
+        nativeInput.type = inputType;
+        nativeInput.setAttribute('data-opt-value', valText);
+        nativeInput.setAttribute('data-opt-label', labelText);
+        if (idVal) nativeInput.setAttribute('data-opt-id', idVal);
+        if (tagText) nativeInput.setAttribute('data-opt-tag', tagText);
+        if (clickVal) nativeInput.setAttribute('data-opt-click', clickVal);
+        if (inputType === 'radio') nativeInput.name = groupComponentId;
+      } else {
+        console.warn(`component "${componentId}": clone c-field no contiene native-button ni input detectable.`);
+      }
+
+      if (clickVal) clone.setAttribute('cl', clickVal);
+      groupEl.appendChild(clone);
+    });
+
+    if (!groupEl._hasDelegate) {
+      groupEl.addEventListener('change', (evt) => onGroupChange(evt, componentId));
+      groupEl._hasDelegate = true;
+    }
+
+    COMPONENTS.set(componentId, {
+      componentId,
+      componentEl: component,
+      storageKey,
+      storagePath,
+      jsonPath,
+      parent,
+      hasDeps,
+      valueKey,
+      labelKey,
+      tagKey,
+      idKey,
+      clickKey,
+      fClass,
+      lClass,
+      checkboxLimit,
+      inputType,
+      groupEl,
+      fieldTemplate,
+      hiddenEl: hidden,
+      currentValue: inputType === 'checkbox' ? [] : {}
+    });
+
+    syncUIFromHidden(componentId);
+    
+  }
+
+  function syncUIFromHidden(componentId) {
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+    const { hiddenEl, inputType, groupEl, fClass, lClass } = state;
+    const raw = hiddenEl.value;
+    if (!raw) return;
+    const parsed = safeJSONParse(raw, null);
+
+    groupEl.querySelectorAll('[c-field]').forEach(fe => {
+      if (fClass) fe.classList.remove(fClass);
+      const lab = fe.querySelector('[c-label]');
+      if (lab && lClass) lab.classList.remove(lClass);
+      const inp = fe.querySelector('[native-button], input');
+      if (inp) inp.checked = false;
+    });
+
+    if (inputType === 'checkbox' && Array.isArray(parsed)) {
+      parsed.forEach(item => {
+        groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+          if (String(inp.getAttribute('data-opt-value')) === String(item.value)) {
+            inp.checked = true;
+            const fe = inp.closest('[c-field]');
+            fe && fClass && fe.classList.add(fClass);
+            const lab = fe && fe.querySelector('[c-label]');
+            lab && lClass && lab.classList.add(lClass);
+          }
+        });
+      });
+      state.currentValue = parsed.slice();
+    } else if (inputType === 'radio' && parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+      groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+        if (String(inp.getAttribute('data-opt-value')) === String(parsed.value)) {
+          inp.checked = true;
+          const fe = inp.closest('[c-field]');
+          fe && fClass && fe.classList.add(fClass);
+          const lab = fe && fe.querySelector('[c-label]');
+          lab && lClass && lab.classList.add(lClass);
+        }
+      });
+      state.currentValue = parsed;
+    } else {
+      state.currentValue = inputType === 'checkbox' ? [] : {};
+    }
+  }
+
+  function onGroupChange(evt, componentId) {
+    const input = evt.target;
+    if (!input || !(input instanceof HTMLInputElement)) return;
+
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+
+    const { inputType, hiddenEl, checkboxLimit, fClass, lClass, groupEl } = state;
+    const value = input.getAttribute('data-opt-value');
+    const label = input.getAttribute('data-opt-label') || '';
+    const id = input.getAttribute('data-opt-id') || null;
+    const isChecked = input.checked;
+
+    if (inputType === 'checkbox') {
+      let current = safeJSONParse(hiddenEl.value, []);
+      current = Array.isArray(current) ? current : [];
+
+      const exists = current.some(it => String(it.value) === String(value));
+      if (isChecked && !exists) {
+        if (checkboxLimit && current.length >= checkboxLimit) {
+          showErrorModal(`Selecciona máximo ${checkboxLimit} opciones.`);
+          input.checked = false;
+          return;
+        }
+        const entry = { value, label };
+        if (id) entry.id = id;
+        current.push(entry);
+      } else if (!isChecked && exists) {
+        current = current.filter(it => String(it.value) !== String(value));
+      }
+
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.toggle(fClass, isChecked);
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.toggle(lClass, isChecked);
+
+      hiddenEl.value = JSON.stringify(current);
+      state.currentValue = current.slice();
+
+      emitOptionEvents('checkbox', state, input, { value, label, id, isChecked, currentValue: current });
+
+    } else if (inputType === 'radio') {
+      const entry = { value, label };
+      if (id) entry.id = id;
+
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        fClass && fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        lab && lClass && lab.classList.remove(lClass);
+      });
+
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.add(fClass);
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.add(lClass);
+
+      hiddenEl.value = JSON.stringify(entry);
+      state.currentValue = Object.assign({}, entry);
+
+      emitOptionEvents('radio', state, input, { value, label, id, isChecked: true, currentValue: state.currentValue });
+    }
+
+    
+  }
+
+  function emitOptionEvents(type, state, input, payload) {
+    const detail = {
+      componentId: state.componentId,
+      jsonPath: state.jsonPath,
+      type,
+      value: payload.value,
+      label: payload.label,
+      id: payload.id,
+      isChecked: payload.isChecked,
+      currentValue: payload.currentValue
+    };
+
+    document.dispatchEvent(new CustomEvent('option-change', { detail }));
+    if (type === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+    else if (type === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+  }
+
+
+
+  /* ---------- Inicialización SOLO en data-ready ---------- */
+  document.addEventListener('data-ready', buildAllComponents);
+
+  window.__OptionsBuilder = { COMPONENTS };
+})();
+</script>
+
+
+<!-- 🟦 Options-Handler-v5-1 🟦 -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+  function showErrorModal(message) {
+    if (typeof showToast === 'function') showToast(message, 'error');
+    else if (typeof alert === 'function') alert(message);
+    else console.error(message);
+  }
+
+  /* ---------- Limpieza de hidden/UI para un hidden input dado ---------- */
+  function clearHiddenAndUI(hiddenEl) {
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      // heurística: limpiar a array vacío
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const inputType = (ancestorComp.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    // limpiar valor
+    if (inputType === 'checkbox') hiddenEl.value = '[]';
+    else hiddenEl.value = '{}';
+
+    // limpiar UI del componente
+    if (groupEl) {
+      groupEl.querySelectorAll('[native-button], input').forEach(i => { try { i.checked = false; } catch(e){} });
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+
+    // disparar cf-update-form NO es necesario (forms leen DOM al submit)
+  }
+
+  /* ---------- Handler para checkbox: multiple matches ---------- */
+  document.addEventListener('valid-change-checkbox', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
+    const currentValues = currentValue.map(it => String(it.value));
+
+    // DISPLAY: mostrar nodos con match en currentValues, ocultar el resto
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && currentValues.includes(String(match))) node.style.display = '';
+      else node.style.display = 'none';
+    });
+
+    // REQUIRED: para cada node required-depend, si algún match coincide => set data-required en inputs cf-json-path dentro del nodo
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      const shouldSet = match && currentValues.includes(String(match));
+      if (shouldSet) {
+        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
+      } else {
+        // remover y limpiar
+        hiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUI(h);
+        });
+      }
+    });
+  });
+
+  /* ---------- Handler para radio: single match ---------- */
+  document.addEventListener('valid-change-radio', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const selectedValue = detail.value !== undefined ? String(detail.value) : null;
+
+    // DISPLAY: ocultar todos excepto los que coincidan con selectedValue
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && selectedValue !== null && String(match) === selectedValue) node.style.display = '';
+      else node.style.display = 'none';
+    });
+
+    // REQUIRED: setear solo los que coincidan; limpiar los otros
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      if (match && selectedValue !== null && String(match) === selectedValue) {
+        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
+      } else {
+        hiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUI(h);
+        });
+      }
+    });
+  });
+
+  // Exportar funciones para debugging opcional
+  window.__OptionsHandler = { clearHiddenAndUI };
+
+})();
+</script>
+
+<!-- 🟦 Checkbox-v2 🟦 -->
+ <script>
+(function(){
+  'use strict';
+
+  // Utiles
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  function clearHiddenAndUIForAncestor(hiddenEl) {
+    // hiddenEl: input[cf-json-path] que vamos a limpiar
+    // Buscamos el componente ancestor y limpiamos su hidden / UI según atributos.
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      // Si no pertenece a componente manejado, limpiamos por tipo heurístico
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const compId = ancestorComp.getAttribute('component-id');
+    const inputType = ancestorComp.getAttribute('input-type') || 'checkbox';
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    if (inputType === 'checkbox') {
+      hiddenEl.value = '[]';
+    } else {
+      hiddenEl.value = '{}';
+    }
+
+    if (groupEl) {
+      // desmarcar inputs y remover clases en UI
+      groupEl.querySelectorAll('[native-button], input').forEach(i => {
+        try { i.checked = false; } catch(e){}
+      });
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+
+
+  }
+
+  // Checkbox handler: escuchar evento emitido por el builder
+  document.addEventListener('valid-change-checkbox', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
+    // extraemos valores simples para comparación
+    const currentValues = currentValue.map(it => String(it.value));
+
+    // DISPLAY: mostrar nodos cuyo match esté en currentValues; ocultar el resto
+    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      if (match && currentValues.includes(String(match))) {
+        node.style.display = '';
+      } else {
+        node.style.display = 'none';
+      }
+    });
+
+    // REQUIRED: para cada nodo required-depend, si alguno de los currentValues coincide -> add data-required
+    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
+      const match = node.getAttribute('match');
+      const targetHiddenInputs = node.querySelectorAll('input[cf-json-path]');
+      const shouldSet = match && currentValues.includes(String(match));
+      if (shouldSet) {
+        targetHiddenInputs.forEach(h => h.setAttribute('data-required', ''));
+      } else {
+        // remover data-required y limpiar sus hidden inputs y UI asociada
+        targetHiddenInputs.forEach(h => {
+          h.removeAttribute('data-required');
+          clearHiddenAndUIForAncestor(h);
+        });
+      }
+    });
+
+
+  });
+})();
+</script>
+
+
+
+<!-- 🟦 Radio-v2 (Corregido) 🟦 -->
+<script>
+(function(){
+  'use strict';
+
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  function clearHiddenAndUIForAncestor(hiddenEl) {
+    const ancestorComp = hiddenEl.closest('[component-id]');
+    if (!ancestorComp) {
+      try {
+        const parsed = JSON.parse(hiddenEl.value || '');
+        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
+      } catch {
+        hiddenEl.value = '[]';
+      }
+      return;
+    }
+
+    const inputType = ancestorComp.getAttribute('input-type') || 'checkbox';
+    const fClass = ancestorComp.getAttribute('f-class') || '';
+    const lClass = ancestorComp.getAttribute('l-class') || '';
+    const groupEl = ancestorComp.querySelector('[role="group"]');
+
+    if (inputType === 'checkbox') hiddenEl.value = '[]';
+    else hiddenEl.value = '{}';
+
+    if (groupEl) {
+      groupEl.querySelectorAll('[native-button], input').forEach(i => { 
+        try { i.checked = false; } catch(e){} 
+      });
+      
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+    }
+  }
+
+  // Radio handler: escucha evento del builder
+  document.addEventListener('valid-change-radio', (e) => {
+    const detail = e.detail || {};
+    const componentId = detail.componentId;
+    const selectedValue = detail.value !== undefined ? String(detail.value) : null;
+    
+    // Obtener el componente y su formulario padre
+    const component = document.querySelector(`[component-id="${componentId}"]`);
+    if (!component) return;
+    
+    const form = component.closest('form') || document;
+
+    // 1. Manejar DISPLAY-DEPEND
+    const displayDependents = form.querySelectorAll(`[display-depend="${componentId}"]`);
+    if (displayDependents.length > 0) {
+      displayDependents.forEach(node => {
+        const match = node.getAttribute('match');
+        node.style.display = (match && selectedValue !== null && String(match) === selectedValue) 
+          ? '' 
+          : 'none';
+      });
+    }
+
+    // 2. Manejar REQUIRED-DEPEND (CORRECCIÓN PRINCIPAL)
+    const requiredDependents = form.querySelectorAll(`[required-depend="${componentId}"]`);
+    if (requiredDependents.length > 0) {
+      requiredDependents.forEach(node => {
+        const match = node.getAttribute('match');
+        const targetHiddenInputs = node.querySelectorAll('input[cf-json-path]');
+        
+        if (match && selectedValue !== null && String(match) === selectedValue) {
+          // ESTABLECER REQUERIDO
+          targetHiddenInputs.forEach(h => {
+            h.setAttribute('data-required', '');
+            // Disparar evento para actualizar botones
+            const changeEvent = new Event('change', { bubbles: true });
+            h.dispatchEvent(changeEvent);
+          });
+        } else {
+          // QUITAR REQUERIDO Y LIMPIAR
+          targetHiddenInputs.forEach(h => {
+            h.removeAttribute('data-required');
+            clearHiddenAndUIForAncestor(h);
+            // Disparar evento para actualizar botones
+            const changeEvent = new Event('change', { bubbles: true });
+            h.dispatchEvent(changeEvent);
+          });
+        }
+      });
+    }
+  });
+})();
+</script>
+
+
+
+<!-- 🐬 Reset-v1 🐬 -->
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
+  function getInitialHiddenValue(inputType) {
+    return inputType === 'checkbox' ? '[]' : '{}';
+  }
+
+  /* ---------- Hide display-depend elements for components that declare has-deps="true" ---------- */
+  function hideDisplayDependents(formEl) {
+    const scope = formEl || document;
+    const hiddenElements = [];
+    // buscamos componentes dentro del scope que tengan has-deps="true"
+    const compsWithDeps = scope.querySelectorAll('[component-id][has-deps="true"]');
+    const seen = new Set();
+
+    compsWithDeps.forEach(comp => {
+      const compId = comp.getAttribute('component-id');
+      if (!compId || seen.has(compId)) return;
+      seen.add(compId);
+
+      // buscamos los elementos que dependen visualmente de este component-id
+      const selector = `[display-depend="${compId}"]`;
+      const targets = (formEl ? formEl.querySelectorAll(selector) : document.querySelectorAll(selector));
+      targets.forEach(t => {
+        // ocultamos por inline-style (no tocamos clases)
+        t.style.display = 'none';
+        hiddenElements.push(t);
+      });
+    });
+
+    return hiddenElements;
+  }
+
+  /* ---------- Core reset for a single component (v2-aware) ---------- */
+  function resetComponentState(componentEl) {
+    const map = window.__OptionsBuilder && window.__OptionsBuilder.COMPONENTS ? window.__OptionsBuilder.COMPONENTS : null;
+    const componentId = componentEl.getAttribute('component-id');
+    const state = map && map.get(componentId) ? map.get(componentId) : null;
+
+    const inputType = state ? state.inputType : (componentEl.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const parentAttr = state ? state.parent : (componentEl.getAttribute('parent') || '');
+    const fClass = state ? state.fClass : (componentEl.getAttribute('f-class') || '');
+    const lClass = state ? state.lClass : (componentEl.getAttribute('l-class') || '');
+    const groupEl = state ? state.groupEl : componentEl.querySelector('[role="group"]');
+
+    let hidden = state && state.hiddenEl ? state.hiddenEl : componentEl.querySelector('input[type="hidden"][cf-json-path]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      const jp = componentEl.getAttribute('json-path') || ('component.' + (componentId || Math.random().toString(36).slice(2)));
+      hidden.setAttribute('cf-json-path', jp);
+      componentEl.appendChild(hidden);
+    }
+
+    const initialVal = getInitialHiddenValue(inputType);
+
+    if (!parentAttr) {
+      // Parent: restaurar estado original: data-required presente y hidden en valor inicial
+      hidden.setAttribute('data-required', '');
+      hidden.value = initialVal;
+
+      // limpiar UI
+      if (groupEl) {
+        groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+          if (inp.type === 'checkbox' || inp.type === 'radio') inp.checked = false;
+          else inp.value = '';
+        });
+        groupEl.querySelectorAll('[c-field]').forEach(fe => {
+          if (fClass) fe.classList.remove(fClass);
+          const lab = fe.querySelector('[c-label]');
+          if (lab && lClass) lab.classList.remove(lClass);
+        });
+      }
+    } else {
+      // Child: quitar data-required, ocultar display-dep (se hará globalmente después) y resetear
+      hidden.removeAttribute('data-required');
+      hidden.value = initialVal;
+
+      componentEl.querySelectorAll('[data-required]').forEach(inp => inp.removeAttribute('data-required'));
+
+      componentEl.querySelectorAll('input').forEach(inp => {
+        if (inp.type === 'radio' || inp.type === 'checkbox') inp.checked = false;
+        else inp.value = '';
+      });
+
+      componentEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+
+      // Nota: los display-depend reales se ocultan globalmente tras resetForm (hideDisplayDependents)
+    }
+
+    // Emitir eventos para que el sistema reevalúe dependencias
+    let parsedValue = safeJSONParse(hidden.value, null);
+    parsedValue = (inputType === 'checkbox') ? (Array.isArray(parsedValue) ? parsedValue : []) : ((parsedValue && typeof parsedValue === 'object') ? parsedValue : {});
+
+    const detail = {
+      componentId: componentId,
+      jsonPath: hidden.getAttribute('cf-json-path'),
+      type: inputType,
+      value: null,
+      label: '',
+      id: null,
+      isChecked: false,
+      currentValue: parsedValue
+    };
+
+    document.dispatchEvent(new CustomEvent('option-change', { detail }));
+    if (inputType === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+    else if (inputType === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+
+    return;
+  }
+
+  /* ---------- Reset whole form ---------- */
+  function resetForm(formEl) {
+    // show loader
+    document.dispatchEvent(new CustomEvent('cf-loader-on'));
+
+    const map = window.__OptionsBuilder && window.__OptionsBuilder.COMPONENTS ? window.__OptionsBuilder.COMPONENTS : null;
+
+    // Reseteamos componentes dentro del form (o todos si formEl === null)
+    if (map) {
+      for (const [compId, state] of map.entries()) {
+        const compEl = state && state.componentEl;
+        if (!compEl) continue;
+        if (!formEl || compEl.closest('[cf-form-submit]') === formEl) resetComponentState(compEl);
+      }
+    } else {
+      const all = formEl ? formEl.querySelectorAll('[component-id]') : document.querySelectorAll('[component-id]');
+      all.forEach(compEl => resetComponentState(compEl));
+    }
+
+
+    setTimeout(() => {
+      hideDisplayDependents(formEl);
+
+      // dar otro micro-tick para que layout/repintado aplique, luego apagar loader
+      setTimeout(() => {
+        document.dispatchEvent(new CustomEvent('cf-loader-off'));
+      }, 60);
+    }, 80);
+  }
+
+  /* ---------- Instalar listeners en DOMContentLoaded ---------- */
+  function install() {
+    const reloadEls = document.querySelectorAll('[cf-reload-form]');
+    reloadEls.forEach(el => {
+      el.addEventListener('click', function (evt) {
+        try { evt.preventDefault(); } catch (e) { /* ignore*/ }
+        const form = el.closest('[cf-form-submit]') || null;
+        //actualizame este esto que te estoy dando para incluirir correcamtente:
+        document.dispatchEvent(new CustomEvent('reset-continue-buttons', {
+          detail: form
+        }));
+        resetForm(form);
+      });
+    });
+
+
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    install();
+  }
+
+})();
+</script>
+
+<!-- 🚀 ContinueHandler-v5 (Solución Final) 🚀 -->
+<script>
+(function(){
+  'use strict';
+  
+  // --- Módulo de validación ---
+  const ValidationModule = {
+    isFieldEmpty: function(field) {
+      const rawValue = field.value;
+      
+      if (rawValue === '[]' || rawValue === '{}') return true;
+      
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed) && parsed.length === 0) return true;
+        if (typeof parsed === 'object' && Object.keys(parsed).length === 0) return true;
+      } catch (e) {
+        return !rawValue || rawValue.trim() === '';
+      }
+      
+      return false;
+    }
+  };
+
+  // --- Validar y actualizar botón ---
+  function validateContinueButton(buttonId) {
+    const requiredFields = document.querySelectorAll(
+      `[continue-trigger="${buttonId}"][data-required]`
+    );
+    
+    let allFilled = true;
+    
+    requiredFields.forEach(field => {
+      if (ValidationModule.isFieldEmpty(field)) {
+        allFilled = false;
+      }
+    });
+    
+    const continueButton = document.getElementById(buttonId);
+    if (!continueButton) return;
+    
+    continueButton.classList.toggle('inutil', !allFilled);
+    continueButton.disabled = !allFilled;
+  }
+
+  // --- Manejar cambios en componentes ---
+  function handleComponentChange(componentId) {
+    const component = document.querySelector(`[component-id="${componentId}"]`);
+    if (!component) return;
+    
+    const continueButtonId = component.getAttribute('continue-button-id');
+    if (!continueButtonId) return;
+    
+    validateContinueButton(continueButtonId);
+  }
+
+  // --- Manejar cambios en campos normales ---
+  function handleNormalFieldChange(field) {
+    const triggerId = field.getAttribute('continue-trigger');
+    if (!triggerId) return;
+    
+    validateContinueButton(triggerId);
+  }
+
+  // --- Resetear botones ---
+  function resetContinueButtons(form) {
+    const scope = form || document;
+    const buttons = scope.querySelectorAll('[continue-target]');
+    buttons.forEach(button => {
+      button.classList.add('inutil');
+      button.disabled = true;
+    });
+  }
+
+  // --- Escuchar eventos ---
+  document.addEventListener('valid-change-checkbox', e => handleComponentChange(e.detail.componentId));
+  document.addEventListener('valid-change-radio', e => handleComponentChange(e.detail.componentId));
+  document.addEventListener('reset-continue-buttons', e => resetContinueButtons(e.detail));
+  
+  // Escuchar cambios en campos normales
+  document.addEventListener('change', function(e) {
+    const field = e.target;
+    if (field.hasAttribute('continue-trigger')) {
+      handleNormalFieldChange(field);
+    }
+  });
+
+})();
+</script>
