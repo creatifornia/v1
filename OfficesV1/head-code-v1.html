@@ -1,0 +1,212 @@
+<style>
+  /* 1. Transparencia en área principal */
+  uc-start-from .uc-content,
+  uc-start-from .uc-content * {
+    background: transparent !important;
+  }
+
+  /* 2. Padding en área de drop */
+  [uc-drop-area] {
+    padding: 5px !important;
+    border-radius: 0px !important;
+    border: 1px solid #000 !important;
+  }
+
+  /* 3. Oculta créditos */
+  .uc-credits {
+    display: none !important;
+  }
+
+  /* 4. Oculta botón "Done" en toolbar */
+  .uc-toolbar .uc-done-btn {
+    display: none !important;
+  }
+
+  /* 5. Muestra botón "Done" en content */
+  .uc-content .uc-done-btn {
+    display: inline-flex !important;
+  }
+
+  /* 6. Oculta .uc-tab-content-row solo en el uploader image-preview */
+  [ctx-name="image-preview"] .uc-tab-content-row {
+    display: none !important;
+  }
+
+  /* 7. Oculta botón "Cancel" */
+  .uc-cancel-btn {
+    display: none !important;
+  }
+
+  
+
+
+ .uc-upload-list .uc-files {
+    padding: 2px !important;
+ }
+
+
+
+
+
+
+  
+</style>
+
+
+<style>
+@media (prefers-color-scheme: dark) {
+    :where([uc-wgt-common]) {
+        --uc-background: black !important;
+        --uc-foreground: var(--sunny) !important;
+        --uc-muted:  var(--cream) !important;
+        --uc-muted-foreground: black !important;
+    }
+}
+</style>
+
+
+ <!--------------------- 🐞 Uploadcare 🐞  --------------------->
+
+
+
+
+
+<style>
+  .hide-this {
+    display: none;
+  }
+</style>
+
+<!-- uploadcare -->
+<script>
+  // eliminar uploadcare de local storage
+  window.addEventListener('DOMContentLoaded', () => {
+    localStorage.removeItem('uploadcare');
+    console.log('🗑️ Key "uploadcare" eliminada de localStorage');
+  });
+</script>
+
+<style>
+.invalid {
+  border-color: #ff4444 !important;
+  animation: shake 0.5s;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+  
+</style>
+
+
+<style>
+.integer-input.invalid {
+  border: 2px solid #ff5e69 !important;
+  animation: shake 0.5s;
+  box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-6px); }
+  30%, 60%, 90% { transform: translateX(6px); }
+}
+
+</style>
+
+
+<style>
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+</style>
+
+<style>
+/* Estilo para inhabilitar elementos */
+.inutil {
+    pointer-events: none !important;
+    user-select: none !important;
+    cursor: not-allowed !important;
+}
+</style>
+
+<style>
+::selection {
+  background: #8f00ff; /* WebKit/Blink Browsers */
+}
+::-moz-selection {
+  background: #8f00ff; /* Gecko Browsers */
+}
+</style>  
+
+<style>
+@keyframes subtle-shake {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+  90% { transform: translateX(-0.5px); }
+}
+
+/* Shake siempre si tiene has-new */
+.has-new {
+  animation: subtle-shake 1.2s ease-in-out infinite;
+  transform-origin: center;
+}
+</style>  
+
+<script>
+  // Usamos el body como delegado
+  document.addEventListener('click', function (e) {
+    const el = e.target.closest('.has-new');
+    if (el) {
+      el.classList.remove('has-new');
+    }
+  });
+</script>
+
+<style>
+@keyframes shake2 {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+  90% { transform: translateX(-0.5px); }
+}
+
+/* Shake siempre si tiene has-new */
+.shake2 {
+  animation: shake2 1.2s ease-in-out infinite;
+  transform-origin: center;
+}
+</style>  
+
+<style>/* Aplica solo en pantallas mayores a 992px (típico breakpoint para desktop) */
+@media (min-width: 993px) {
+  .hover-bar {
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  .hover-bar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--sunny); /* Usa la variable CSS --sunny */
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: -1;
+    
+  }
+
+  .hover-bar:hover::before {
+    transform: scaleX(1);
+  }
+}
+</style>  

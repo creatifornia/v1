@@ -1,4 +1,4 @@
-<!-- 🦧 BLD-5 🦧 -->
+<!-- 🦧 BLD-7 🦧 -->
 <script>
 (function(){
   'use strict';
@@ -329,6 +329,7 @@ function emitOptionEvents(type, state, input, payload) {
     dependencies: state.dependencies,
     requiredDepend: state.requiredDepend,
     displayDepend: state.displayDepend,
+    continueButtonId: state.continueButtonId,
     match: state.MATCH
   };
 
@@ -356,7 +357,7 @@ function emitOptionEvents(type, state, input, payload) {
 </script>
 
 
-<!-- 🟦 CBX-1 🟦 -->
+<!-- 🟦 CBX-2 (Handler corregido: actualiza hidden + dependencias) 🟦 -->
 <script>
 (function(){
   'use strict';
@@ -405,14 +406,47 @@ function emitOptionEvents(type, state, input, payload) {
       const dependencies = !!detail.dependencies; // true/false
       const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
       const currentValues = currentValue.map(it => String(it.value));
+      const jsonPath = detail.jsonPath || null;
+      const continueButtonId = detail.continueButtonId || null;
 
-      // Si este componente no maneja dependencias, salimos
-      if (!dependencies) return;
+      console.debug('CBX-2: received valid-change-checkbox', { componentId, jsonPath, currentValue, continueButtonId, dependencies });
 
-      // Buscar componente y su scope (form)
+      // Si este componente no maneja dependencias, salimos (pero aún actualizamos hidden por seguridad)
+      // Nota: si NO quieres actualizar hidden cuando dependencies === false, cambia esta línea.
+      if (!componentId) return;
+
+      // Buscar componente (scope)
       const component = document.querySelector(`[component-id="${componentId}"]`);
-      if (!component) return;
+      if (!component) {
+        console.debug('CBX-2: componente no encontrado', componentId);
+        return;
+      }
       const scope = component.closest('[cf-form-submit]') || document;
+
+      // ----------------------------
+      //  ACTUALIZAR HIDDEN DEL COMPONENTE (clave)
+      // ----------------------------
+      if (jsonPath) {
+        let compHidden = component.querySelector(`input[cf-json-path="${jsonPath}"]`);
+        if (!compHidden) compHidden = component.querySelector(`input[type="hidden"][cf-json-path]`);
+        if (compHidden) {
+          try {
+            compHidden.value = JSON.stringify(currentValue);
+            // dispatch change so continue handler (or other listeners) pick it up
+            compHidden.dispatchEvent(new Event('change', { bubbles: true }));
+            console.debug('CBX-2: updated component hidden', { compHidden, newValue: compHidden.value });
+          } catch (err) {
+            console.error('CBX-2: error setting hidden value', err);
+          }
+        } else {
+          console.debug('CBX-2: hidden input no encontrado en el componente para jsonPath', jsonPath);
+        }
+      }
+
+      // Si no maneja dependencias, terminamos aquí
+      if (!dependencies) {
+        return;
+      }
 
       // DISPLAY: mostrar nodos cuyo match esté en currentValues; ocultar el resto
       const displayNodes = scope.querySelectorAll(`[display-depend="${componentId}"]`);
@@ -443,19 +477,37 @@ function emitOptionEvents(type, state, input, payload) {
             h.setAttribute('data-required', '');
             // Notificar a otros listeners (continue handler)
             try { h.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
+            console.debug('CBX-2: set data-required on', h);
           });
         } else {
           candidates.forEach(h => {
+            // Si el candidate tiene atributo always-required y es true, no remover
+            const alwaysReqAttr = h.getAttribute('always-required');
+            const alwaysReq = String(alwaysReqAttr).trim().toLowerCase() === 'true';
+            if (alwaysReq) {
+              console.debug('CBX-2: candidate has always-required, skipping removal for', h);
+              return;
+            }
+
             h.removeAttribute('data-required');
             // limpiar el hidden/UI asociado
             try { clearHiddenAndUIForAncestor(h); } catch(e){}
             try { h.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
+            console.debug('CBX-2: removed data-required and cleared', h);
           });
         }
       });
 
+      // Si el evento trae continueButtonId, podemos forzar validación (opcional)
+      if (continueButtonId) {
+        try {
+          // dispatch a small custom event so continue handler can catch it if needed
+          document.dispatchEvent(new CustomEvent('trigger-validate-continue', { detail: { continueButtonId } }));
+        } catch(e){}
+      }
+
     } catch (err) {
-      console.error('Checkbox-v3 handler error', err);
+      console.error('CBX-2 handler error', err);
     }
   });
 
@@ -562,5 +614,411 @@ function emitOptionEvents(type, state, input, payload) {
     }
   });
 
+})();
+</script>
+
+
+<!-- 🐬 Reset-v1 🐬 -->
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
+  function getInitialHiddenValue(inputType) {
+    return inputType === 'checkbox' ? '[]' : '{}';
+  }
+
+  /* ---------- Hide display-depend elements for components that declare has-deps="true" ---------- */
+  function hideDisplayDependents(formEl) {
+    const scope = formEl || document;
+    const hiddenElements = [];
+    // buscamos componentes dentro del scope que tengan has-deps="true"
+    const compsWithDeps = scope.querySelectorAll('[component-id][has-deps="true"]');
+    const seen = new Set();
+
+    compsWithDeps.forEach(comp => {
+      const compId = comp.getAttribute('component-id');
+      if (!compId || seen.has(compId)) return;
+      seen.add(compId);
+
+      // buscamos los elementos que dependen visualmente de este component-id
+      const selector = `[display-depend="${compId}"]`;
+      const targets = (formEl ? formEl.querySelectorAll(selector) : document.querySelectorAll(selector));
+      targets.forEach(t => {
+        // ocultamos por inline-style (no tocamos clases)
+        t.style.display = 'none';
+        hiddenElements.push(t);
+      });
+    });
+
+    return hiddenElements;
+  }
+
+  /* ---------- Core reset for a single component (v2-aware) ---------- */
+  function resetComponentState(componentEl) {
+    const map = window.__OptionsBuilder && window.__OptionsBuilder.COMPONENTS ? window.__OptionsBuilder.COMPONENTS : null;
+    const componentId = componentEl.getAttribute('component-id');
+    const state = map && map.get(componentId) ? map.get(componentId) : null;
+
+    const inputType = state ? state.inputType : (componentEl.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const parentAttr = state ? state.parent : (componentEl.getAttribute('parent') || '');
+    const fClass = state ? state.fClass : (componentEl.getAttribute('f-class') || '');
+    const lClass = state ? state.lClass : (componentEl.getAttribute('l-class') || '');
+    const groupEl = state ? state.groupEl : componentEl.querySelector('[role="group"]');
+
+    let hidden = state && state.hiddenEl ? state.hiddenEl : componentEl.querySelector('input[type="hidden"][cf-json-path]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      const jp = componentEl.getAttribute('json-path') || ('component.' + (componentId || Math.random().toString(36).slice(2)));
+      hidden.setAttribute('cf-json-path', jp);
+      componentEl.appendChild(hidden);
+    }
+
+    const initialVal = getInitialHiddenValue(inputType);
+
+    if (!parentAttr) {
+      // Parent: restaurar estado original: data-required presente y hidden en valor inicial
+      hidden.setAttribute('data-required', '');
+      hidden.value = initialVal;
+
+      // limpiar UI
+      if (groupEl) {
+        groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+          if (inp.type === 'checkbox' || inp.type === 'radio') inp.checked = false;
+          else inp.value = '';
+        });
+        groupEl.querySelectorAll('[c-field]').forEach(fe => {
+          if (fClass) fe.classList.remove(fClass);
+          const lab = fe.querySelector('[c-label]');
+          if (lab && lClass) lab.classList.remove(lClass);
+        });
+      }
+    } else {
+      // Child: quitar data-required, ocultar display-dep (se hará globalmente después) y resetear
+      hidden.removeAttribute('data-required');
+      hidden.value = initialVal;
+
+      componentEl.querySelectorAll('[data-required]').forEach(inp => inp.removeAttribute('data-required'));
+
+      componentEl.querySelectorAll('input').forEach(inp => {
+        if (inp.type === 'radio' || inp.type === 'checkbox') inp.checked = false;
+        else inp.value = '';
+      });
+
+      componentEl.querySelectorAll('[c-field]').forEach(fe => {
+        if (fClass) fe.classList.remove(fClass);
+        const lab = fe.querySelector('[c-label]');
+        if (lab && lClass) lab.classList.remove(lClass);
+      });
+
+      // Nota: los display-depend reales se ocultan globalmente tras resetForm (hideDisplayDependents)
+    }
+
+    // Emitir eventos para que el sistema reevalúe dependencias
+    let parsedValue = safeJSONParse(hidden.value, null);
+    parsedValue = (inputType === 'checkbox') ? (Array.isArray(parsedValue) ? parsedValue : []) : ((parsedValue && typeof parsedValue === 'object') ? parsedValue : {});
+
+    const detail = {
+      componentId: componentId,
+      jsonPath: hidden.getAttribute('cf-json-path'),
+      type: inputType,
+      value: null,
+      label: '',
+      id: null,
+      isChecked: false,
+      currentValue: parsedValue
+    };
+
+    document.dispatchEvent(new CustomEvent('option-change', { detail }));
+    if (inputType === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+    else if (inputType === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+
+    return;
+  }
+
+  /* ---------- Reset whole form ---------- */
+  function resetForm(formEl) {
+    // show loader
+    document.dispatchEvent(new CustomEvent('cf-loader-on'));
+
+    const map = window.__OptionsBuilder && window.__OptionsBuilder.COMPONENTS ? window.__OptionsBuilder.COMPONENTS : null;
+
+    // Reseteamos componentes dentro del form (o todos si formEl === null)
+    if (map) {
+      for (const [compId, state] of map.entries()) {
+        const compEl = state && state.componentEl;
+        if (!compEl) continue;
+        if (!formEl || compEl.closest('[cf-form-submit]') === formEl) resetComponentState(compEl);
+      }
+    } else {
+      const all = formEl ? formEl.querySelectorAll('[component-id]') : document.querySelectorAll('[component-id]');
+      all.forEach(compEl => resetComponentState(compEl));
+    }
+
+
+    setTimeout(() => {
+      hideDisplayDependents(formEl);
+
+      // dar otro micro-tick para que layout/repintado aplique, luego apagar loader
+      setTimeout(() => {
+        document.dispatchEvent(new CustomEvent('cf-loader-off'));
+      }, 60);
+    }, 80);
+  }
+
+  /* ---------- Instalar listeners en DOMContentLoaded ---------- */
+  function install() {
+    const reloadEls = document.querySelectorAll('[cf-reload-form]');
+    reloadEls.forEach(el => {
+      el.addEventListener('click', function (evt) {
+        try { evt.preventDefault(); } catch (e) { /* ignore*/ }
+        const form = el.closest('[cf-form-submit]') || null;
+        //actualizame este esto que te estoy dando para incluirir correcamtente:
+        document.dispatchEvent(new CustomEvent('reset-continue-buttons', {
+          detail: form
+        }));
+        resetForm(form);
+      });
+    });
+
+
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    install();
+  }
+
+})();
+</script>
+
+
+<!-- 🚀 CON-1 (Actualizado) 🚀 -->
+<script>
+(function(){
+  'use strict';
+  
+  // --- Módulo de validación ---
+  const ValidationModule = {
+    isFieldEmpty: function(field) {
+      const rawValue = field.value;
+      
+      if (rawValue === '[]' || rawValue === '{}') return true;
+      
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed) && parsed.length === 0) return true;
+        if (typeof parsed === 'object' && Object.keys(parsed).length === 0) return true;
+      } catch (e) {
+        return !rawValue || rawValue.trim() === '';
+      }
+      
+      return false;
+    }
+  };
+
+  // --- Validar y actualizar botón ---
+  function validateContinueButton(buttonId) {
+    if (!buttonId) return; // ⛔ Ignorar si es null o undefined
+
+    const requiredFields = document.querySelectorAll(
+      `[continue-trigger="${buttonId}"][data-required]`
+    );
+    
+    let allFilled = true;
+    
+    requiredFields.forEach(field => {
+      if (ValidationModule.isFieldEmpty(field)) {
+        allFilled = false;
+      }
+    });
+    
+    const continueButton = document.getElementById(buttonId);
+    if (!continueButton) return;
+    
+    continueButton.classList.toggle('inutil', !allFilled);
+    continueButton.disabled = !allFilled;
+  }
+
+  // --- Resetear botones ---
+  function resetContinueButtons(form) {
+    const scope = form || document;
+    const buttons = scope.querySelectorAll('[continue-target]');
+    buttons.forEach(button => {
+      button.classList.add('inutil');
+      button.disabled = true;
+    });
+  }
+
+  // --- Escuchar eventos ---
+  document.addEventListener('valid-change-checkbox', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    validateContinueButton(e.detail.continueButtonId);
+  });
+
+  document.addEventListener('valid-change-radio', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    validateContinueButton(e.detail.continueButtonId);
+  });
+
+  document.addEventListener('reset-continue-buttons', e => {
+    resetContinueButtons(e.detail);
+  });
+  
+  // Escuchar cambios en campos normales
+  document.addEventListener('change', function(e) {
+    const field = e.target;
+    if (field.hasAttribute('continue-trigger')) {
+      handleNormalFieldChange(field);
+    }
+  });
+
+})();
+</script>
+
+
+
+
+<!-- 🔹 cf-input simple: crece hasta maxWidth, luego deja de crecer (no multi-line) 🔹 -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- util: parse px ---------- */
+  function parsePx(v){
+    if (!v && v !== 0) return null;
+    const s = String(v).trim();
+    const m = s.match(/^(\d+(?:\.\d+)?)px$/);
+    if (m) return Number(m[1]);
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /* ---------- obtener maxWidth numérico (px) para un elemento ---------- */
+  function getNumericMaxWidth(el){
+    // 1) data-maxwidth (valor en px o número)
+    const d = el.getAttribute('data-maxwidth');
+    const fromAttr = parsePx(d) || (d && !isNaN(Number(d)) ? Number(d) : null);
+    if (fromAttr) return fromAttr;
+
+    // 2) inline style maxWidth
+    const inline = el.style.maxWidth;
+    const fromInline = parsePx(inline);
+    if (fromInline) return fromInline;
+
+    // 3) computed maxWidth
+    const cs = getComputedStyle(el);
+    const computed = cs.maxWidth;
+    const fromComputed = parsePx(computed);
+    if (fromComputed) return fromComputed;
+
+    // 4) fallback: ancho del contenedor
+    const parent = el.parentElement;
+    const parentWidth = parent ? parent.clientWidth : window.innerWidth;
+    return parentWidth || window.innerWidth;
+  }
+
+  /* ---------- medidor de texto (span fuera de flujo) ---------- */
+  const measurer = (function(){
+    const span = document.createElement('span');
+    span.style.position = 'absolute';
+    span.style.left = '-9999px';
+    span.style.top = '-9999px';
+    span.style.visibility = 'hidden';
+    span.style.whiteSpace = 'pre'; // respetar espacios
+    document.body.appendChild(span);
+    return {
+      width(text, font){
+        span.style.font = font || '';
+        span.textContent = text || '';
+        return span.getBoundingClientRect().width;
+      }
+    };
+  })();
+
+  function fontFor(node){
+    const cs = getComputedStyle(node);
+    return `${cs.fontStyle} ${cs.fontVariant} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily}`;
+  }
+
+  /* ---------- lógica por input ---------- */
+  function installSimpleAutosize(inputEl){
+    if (!inputEl || inputEl.__cf_simple_installed) return;
+    inputEl.__cf_simple_installed = true;
+
+    // Solo trabajar con inputs tipo text (si quieres incluir otros types, quítalo)
+    if (inputEl.tagName.toLowerCase() !== 'input') return;
+    // default padding 5px left/right si no existe inline
+    if (!inputEl.style.paddingLeft) inputEl.style.paddingLeft = '5px';
+    if (!inputEl.style.paddingRight) inputEl.style.paddingRight = '5px';
+
+    let maxWidth = getNumericMaxWidth(inputEl);
+    const parent = inputEl.parentElement;
+
+    function recomputeMax(){
+      maxWidth = getNumericMaxWidth(inputEl);
+    }
+
+    function updateWidth(){
+      // medir texto (priorizar value, sino placeholder)
+      const text = inputEl.value || inputEl.placeholder || '';
+      const font = fontFor(inputEl);
+      const textW = Math.ceil(measurer.width(text, font));
+      const paddingTotal = 10; // 5 + 5
+      const desired = textW + paddingTotal;
+      const containerMax = Math.min(maxWidth, parent ? parent.clientWidth : window.innerWidth);
+
+      // si desired < containerMax -> ajustar width a desired
+      // si desired >= containerMax -> fijar width a containerMax (no crecer más)
+      const finalWidth = desired < containerMax ? Math.max(30, desired) : containerMax;
+      inputEl.style.boxSizing = 'content-box';
+      inputEl.style.width = finalWidth + 'px';
+      // no tocamos overflow: el input seguirá comportamiento nativo de scroll interno
+    }
+
+    // handler: usar RAF para performance
+    let rafId = null;
+    function scheduleUpdate(){
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        updateWidth();
+        rafId = null;
+      });
+    }
+
+    // listeners
+    inputEl.addEventListener('input', scheduleUpdate);
+    inputEl.addEventListener('change', scheduleUpdate);
+    inputEl.addEventListener('paste', () => setTimeout(scheduleUpdate, 0));
+    // si el contenedor cambia de tamaño, recomputar max e intentar ajustar
+    window.addEventListener('resize', () => {
+      recomputeMax();
+      scheduleUpdate();
+    });
+
+    // inicial
+    scheduleUpdate();
+  }
+
+  /* ---------- Orquestador: data-ready ---------- */
+  document.addEventListener('data-ready', () => {
+    try {
+      const nodes = Array.from(document.querySelectorAll('[cf-input]'));
+      // Filtrar solo inputs (no textareas) por diseño simple
+      const inputs = nodes.filter(n => n && n.tagName && n.tagName.toLowerCase() === 'input');
+      inputs.forEach(i => installSimpleAutosize(i));
+
+      // listo
+      setTimeout(() => document.dispatchEvent(new Event('resize-inputs-readyState')), 60);
+    } catch (err) {
+      console.error('cf-input simple autosize error', err);
+      try { document.dispatchEvent(new Event('resize-inputs-readyState')); } catch(e){}
+    }
+  });
 })();
 </script>

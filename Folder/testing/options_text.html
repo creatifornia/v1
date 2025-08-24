@@ -141,7 +141,7 @@
       groupEl.appendChild(clone);
     });
 
-    if (!groupEl._hasDelegate) {
+    if (!groupEl.hasDelegate) {
       groupEl.addEventListener('change', (evt) => onGroupChange(evt, componentId));
       groupEl._hasDelegate = true;
     }
@@ -310,121 +310,7 @@
 </script>
 
 
-<!-- 🟦 Options-Handler-v5-1 🟦 -->
-<script>
-(function(){
-  'use strict';
 
-  /* ---------- Utils ---------- */
-  function safeJSONParse(str, fallback = null) {
-    try { return JSON.parse(str); } catch { return fallback; }
-  }
-  function showErrorModal(message) {
-    if (typeof showToast === 'function') showToast(message, 'error');
-    else if (typeof alert === 'function') alert(message);
-    else console.error(message);
-  }
-
-  /* ---------- Limpieza de hidden/UI para un hidden input dado ---------- */
-  function clearHiddenAndUI(hiddenEl) {
-    const ancestorComp = hiddenEl.closest('[component-id]');
-    if (!ancestorComp) {
-      // heurística: limpiar a array vacío
-      try {
-        const parsed = JSON.parse(hiddenEl.value || '');
-        hiddenEl.value = Array.isArray(parsed) ? '[]' : '{}';
-      } catch {
-        hiddenEl.value = '[]';
-      }
-      return;
-    }
-
-    const inputType = (ancestorComp.getAttribute('input-type') || 'checkbox').toLowerCase();
-    const fClass = ancestorComp.getAttribute('f-class') || '';
-    const lClass = ancestorComp.getAttribute('l-class') || '';
-    const groupEl = ancestorComp.querySelector('[role="group"]');
-
-    // limpiar valor
-    if (inputType === 'checkbox') hiddenEl.value = '[]';
-    else hiddenEl.value = '{}';
-
-    // limpiar UI del componente
-    if (groupEl) {
-      groupEl.querySelectorAll('[native-button], input').forEach(i => { try { i.checked = false; } catch(e){} });
-      groupEl.querySelectorAll('[c-field]').forEach(fe => {
-        if (fClass) fe.classList.remove(fClass);
-        const lab = fe.querySelector('[c-label]');
-        if (lab && lClass) lab.classList.remove(lClass);
-      });
-    }
-
-    // disparar cf-update-form NO es necesario (forms leen DOM al submit)
-  }
-
-  /* ---------- Handler para checkbox: multiple matches ---------- */
-  document.addEventListener('valid-change-checkbox', (e) => {
-    const detail = e.detail || {};
-    const componentId = detail.componentId;
-    const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
-    const currentValues = currentValue.map(it => String(it.value));
-
-    // DISPLAY: mostrar nodos con match en currentValues, ocultar el resto
-    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
-      const match = node.getAttribute('match');
-      if (match && currentValues.includes(String(match))) node.style.display = '';
-      else node.style.display = 'none';
-    });
-
-    // REQUIRED: para cada node required-depend, si algún match coincide => set data-required en inputs cf-json-path dentro del nodo
-    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
-      const match = node.getAttribute('match');
-      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
-      const shouldSet = match && currentValues.includes(String(match));
-      if (shouldSet) {
-        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
-      } else {
-        // remover y limpiar
-        hiddenInputs.forEach(h => {
-          h.removeAttribute('data-required');
-          clearHiddenAndUI(h);
-        });
-      }
-    });
-  });
-
-  /* ---------- Handler para radio: single match ---------- */
-  document.addEventListener('valid-change-radio', (e) => {
-    const detail = e.detail || {};
-    const componentId = detail.componentId;
-    const selectedValue = detail.value !== undefined ? String(detail.value) : null;
-
-    // DISPLAY: ocultar todos excepto los que coincidan con selectedValue
-    document.querySelectorAll(`[display-depend="${componentId}"]`).forEach(node => {
-      const match = node.getAttribute('match');
-      if (match && selectedValue !== null && String(match) === selectedValue) node.style.display = '';
-      else node.style.display = 'none';
-    });
-
-    // REQUIRED: setear solo los que coincidan; limpiar los otros
-    document.querySelectorAll(`[required-depend="${componentId}"]`).forEach(node => {
-      const match = node.getAttribute('match');
-      const hiddenInputs = node.querySelectorAll('input[cf-json-path]');
-      if (match && selectedValue !== null && String(match) === selectedValue) {
-        hiddenInputs.forEach(h => h.setAttribute('data-required',''));
-      } else {
-        hiddenInputs.forEach(h => {
-          h.removeAttribute('data-required');
-          clearHiddenAndUI(h);
-        });
-      }
-    });
-  });
-
-  // Exportar funciones para debugging opcional
-  window.__OptionsHandler = { clearHiddenAndUI };
-
-})();
-</script>
 
 <!-- 🟦 Checkbox-v2 🟦 -->
  <script>

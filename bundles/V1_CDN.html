@@ -19,7 +19,7 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Fill/Events.js" defer></script>
 
 <!------------------------🧱 Components 🧱------------------------>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/BLD-6.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/BLD-7.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Keywords.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/Currency-v1-1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Components/FriendlyURL-v1.js" defer></script>
@@ -39,7 +39,7 @@
 <!------------------------🐇 Options 🐇------------------------>
 
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Options/RDO-1.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Options/CBX-1.js" defer></script>
+<script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Options/CBX-7.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Options/ContinueHandler-v1.js" defer></script>
 
 
@@ -52,8 +52,7 @@
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Tools/Reset-v1.js" defer></script>
 <script src="https://cdn.jsdelivr.net/gh/creatifornia/v1@main/OfficesV1/Tools/Refresh.js" defer></script>
 
- <!--------------------- 🐞 Uploadcare 🐞  --------------------->
- 
+<!--------------------- 🐞 Uploadcare (init con data-ready) 🐞 --------------------->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/web/uc-file-uploader-regular.min.css" />
 
 <script type="module">
@@ -61,54 +60,68 @@
   import es from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/es.js';
   import en from 'https://cdn.jsdelivr.net/npm/@uploadcare/file-uploader@v1/locales/file-uploader/en.js';
 
-
-document.addEventListener('data-ready', () => {
-
- // Función segura para obtener valores desde localStorage.offices
-        function getOffices(path) {
-            try {
-                const data = JSON.parse(localStorage.getItem("offices") || "{}");
-                return path.split('.').reduce((acc, key) => acc?.[key], data);
-            } catch (e) {
-                console.error("❌ Error parsing offices from localStorage:", e);
-                return null;
-            }
-        }
-        
- 
-
-  // Función para inicializar UploadCare con el locale correcto
-  const initUploadCare = () => {
+  // Función segura para leer localStorage.offices.path
+  function getOffices(path) {
     try {
-      const lang = getOffices('lang.ISO_639');
-      
-      if (lang === 'es') {
+      const data = JSON.parse(localStorage.getItem("offices") || "{}");
+      return path.split('.').reduce((acc, key) => acc?.[key], data);
+    } catch (e) {
+      console.error("❌ Error parsing offices from localStorage:", e);
+      return null;
+    }
+  }
+
+  // Esperamos a que esté lista la data de offices
+  document.addEventListener("data-ready", () => {
+    try {
+      const langISO = getOffices('lang.ISO_639');
+
+      // decidir idioma según condición
+      let chosenLang;
+      if (langISO === 'es') {
         UC.defineLocale('es', es);
+        chosenLang = 'es';
       } else {
         UC.defineLocale('en', en);
+        chosenLang = 'en';
       }
 
+      // definir componentes
       UC.defineComponents(UC);
-      
-      // Disparar evento de finalización
-      document.dispatchEvent(new Event('uploadcare-ready'));
-      console.log('🐞 Uploadcare');
-      
+
+      // disparar evento confirmando init y el idioma elegido
+      document.dispatchEvent(new CustomEvent('uploadcare-ready', {
+        detail: { lang: chosenLang }
+      }));
+      console.log('🐞 Uploadcare inicializado — idioma:', chosenLang);
     } catch (error) {
-      console.error('Error initializing UploadCare:', error);
-      // Fallback a español si ocurre algún error
+      console.error('❌ Error initializing UploadCare:', error);
+
+      // Fallback a español
       UC.defineLocale('es', es);
       UC.defineComponents(UC);
-      
-      // Disparar evento incluso en caso de error (pero marcado como fallo)
-      const errorEvent = new CustomEvent('uploadcare-ready', {
-        detail: { error: true, message: error.message }
-      });
-      document.dispatchEvent(errorEvent);
+
+      document.dispatchEvent(new CustomEvent('uploadcare-ready', {
+        detail: { lang: 'es', error: true, message: error.message }
+      }));
     }
-  };
-});
+  });
 </script>
+
+
+<script>
+  // Escuchar cuando Uploadcare ya está inicializado con chosenLang
+  document.addEventListener('uploadcare-ready', (e) => {
+    const chosenLang = e.detail?.lang || 'es'; // fallback
+
+    // Buscar todos los <uc-config> y asignarles el idioma elegido
+    document.querySelectorAll('uc-config').forEach(cfg => {
+      cfg.setAttribute('locale-name', chosenLang);
+      console.log(`🌍 uc-config (${cfg.getAttribute("ctx-name")}) configurado con locale=${chosenLang}`);
+    });
+  });
+</script>
+
 
 <!---------------------🐸 HTML 🐸--------------------->
 

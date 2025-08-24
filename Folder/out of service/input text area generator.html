@@ -1,0 +1,280 @@
+  <!-- 🔧 cf-input preparator (usa solo cf-input como key) -->
+<!-- 🔧 cf-input smart single-line ↔ multi-line (mejorado: wrapping correcto) -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function parsePx(value) {
+    if (!value) return null;
+    const s = String(value).trim();
+    const m = s.match(/^(\d+(?:\.\d+)?)px$/);
+    if (m) return Number(m[1]);
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function getNumericMaxWidth(el) {
+    // 1) data-maxwidth (px)
+    const d = el.getAttribute('data-maxwidth');
+    const fromAttr = parsePx(d) || (d && Number(d) ? Number(d) : null);
+    if (fromAttr) return fromAttr;
+
+    // 2) inline maxWidth style
+    const inline = el.style.maxWidth;
+    const fromInline = parsePx(inline);
+    if (fromInline) return fromInline;
+
+    // 3) computed style maxWidth
+    const cs = getComputedStyle(el);
+    const computed = cs.maxWidth;
+    const fromComputed = parsePx(computed);
+    if (fromComputed) return fromComputed;
+
+    // 4) fallback: parent width
+    const parent = el.parentElement;
+    const parentWidth = parent ? parent.clientWidth : window.innerWidth;
+    return parentWidth || window.innerWidth;
+  }
+
+  const measurer = (function(){
+    const span = document.createElement('span');
+    span.style.position = 'absolute';
+    span.style.left = '-9999px';
+    span.style.top = '-9999px';
+    span.style.visibility = 'hidden';
+    span.style.whiteSpace = 'pre';
+    document.body.appendChild(span);
+    return {
+      width(text, font) {
+        span.style.font = font || '';
+        span.textContent = text || '';
+        return span.getBoundingClientRect().width;
+      }
+    };
+  })();
+
+  function fontFor(node) {
+    const cs = getComputedStyle(node);
+    return `${cs.fontStyle} ${cs.fontVariant} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight} ${cs.fontFamily}`;
+  }
+
+  function copyAttributes(src, dest, opts = {}) {
+    const skip = new Set(opts.skip || []);
+    for (let i = 0; i < src.attributes.length; i++) {
+      const a = src.attributes[i];
+      if (skip.has(a.name)) continue;
+      dest.setAttribute(a.name, a.value);
+    }
+  }
+
+  /* ---------- Converters ---------- */
+  function inputToTextarea(input, containerMaxWidth) {
+    if (!input) return null;
+    const parent = input.parentElement;
+    const maxWidth = containerMaxWidth || getNumericMaxWidth(input);
+
+    const ta = document.createElement('textarea');
+    copyAttributes(input, ta, { skip: ['type'] });
+    ta.value = input.value || '';
+    if (input.placeholder) ta.placeholder = input.placeholder;
+
+    // control de wrapping visual: queremos que el wrapping ocurra a maxWidth px
+    const visualWidth = Math.min(maxWidth, parent ? parent.clientWidth : maxWidth);
+
+    // styles mínimos controlados
+    ta.style.boxSizing = 'border-box';
+    ta.style.width = visualWidth + 'px';            // crucial: ancho fijo para que envuelva
+    ta.style.maxWidth = visualWidth + 'px';
+    ta.style.minWidth = '0';
+    ta.style.paddingLeft = input.style.paddingLeft || '5px';
+    ta.style.paddingRight = input.style.paddingRight || '5px';
+    ta.style.overflow = 'hidden';
+    ta.style.resize = 'none';
+    ta.style.whiteSpace = 'pre-wrap';               // permite wrapping de texto y respeta saltos
+    ta.style.wordWrap = 'break-word';
+
+    // auto-grow vertical
+    function autoGrow() {
+      ta.style.height = 'auto';
+      ta.style.height = Math.max(ta.scrollHeight, 24) + 'px';
+    }
+
+    ta.addEventListener('input', autoGrow);
+    ta.addEventListener('change', autoGrow);
+    // initial grow
+    requestAnimationFrame(autoGrow);
+
+    // replace in DOM
+    input.parentNode && input.parentNode.replaceChild(ta, input);
+
+    try { ta.dispatchEvent(new CustomEvent('cf-input-converted', { detail: { from: input } })); } catch(e){}
+
+    return ta;
+  }
+
+  function textareaToInput(textarea, containerMaxWidth) {
+    if (!textarea) return null;
+    const parent = textarea.parentElement;
+    const maxWidth = containerMaxWidth || getNumericMaxWidth(textarea);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    copyAttributes(textarea, input, { skip: [] });
+
+    // map value: flatten newlines into spaces so input is single-line
+    input.value = String(textarea.value || '').replace(/\r?\n/g, ' ');
+    if (textarea.placeholder) input.placeholder = textarea.placeholder;
+
+    // minimal styles
+    input.style.boxSizing = 'content-box';
+    input.style.paddingLeft = textarea.style.paddingLeft || '5px';
+    input.style.paddingRight = textarea.style.paddingRight || '5px';
+
+    // set width according to content but not exceeding maxWidth
+    const font = fontFor(textarea);
+    const desired = Math.ceil(measurer.width(input.value || input.placeholder || '', font)) + 10;
+    const final = Math.min(maxWidth, Math.max(30, desired));
+    input.style.width = final + 'px';
+
+    textarea.parentNode && textarea.parentNode.replaceChild(input, textarea);
+
+    try { input.dispatchEvent(new CustomEvent('cf-input-reverted', { detail: { from: textarea } })); } catch(e){}
+
+    return input;
+  }
+
+  /* ---------- Core logic per element ---------- */
+  function attachSmartField(el) {
+    if (!el || el.__cf_processed) return;
+    el.__cf_processed = true;
+
+    // minimal padding defaults if not defined inline
+    if (!el.style.paddingLeft) el.style.paddingLeft = '5px';
+    if (!el.style.paddingRight) el.style.paddingRight = '5px';
+
+    // compute maxWidth for this element
+    const maxWidth = getNumericMaxWidth(el);
+
+    // Evaluate and (optionally) replace node based on content size
+    function evaluate(node) {
+      if (!node || !document.body.contains(node)) return node;
+
+      const parent = node.parentElement;
+      const containerAvailable = parent ? parent.clientWidth : window.innerWidth;
+      const usableMax = Math.min(maxWidth, containerAvailable);
+
+      // If input: measure content single-line width
+      if (node.tagName.toLowerCase() === 'input') {
+        const font = fontFor(node);
+        const text = node.value || node.placeholder || '';
+        const textW = Math.ceil(measurer.width(text, font));
+        const desired = textW + 10; // 5+5 padding
+
+        if (desired <= usableMax) {
+          node.style.boxSizing = 'content-box';
+          node.style.width = (Math.max(30, desired)) + 'px';
+          return node;
+        } else {
+          // convert to textarea with width usableMax to force wrapping
+          const caret = (typeof node.selectionStart === 'number') ? node.selectionStart : null;
+          const ta = inputToTextarea(node, usableMax);
+          // restore caret/focus best-effort
+          try {
+            ta.focus();
+            if (caret !== null) {
+              const pos = Math.min(ta.value.length, caret);
+              ta.setSelectionRange(pos, pos);
+            }
+          } catch (e){}
+          return ta;
+        }
+      }
+
+      // If textarea: auto-grow and maybe revert
+      if (node.tagName.toLowerCase() === 'textarea') {
+        // auto-grow
+        node.style.width = Math.min(maxWidth, containerAvailable) + 'px';
+        node.style.boxSizing = 'border-box';
+        node.style.height = 'auto';
+        node.style.height = Math.max(node.scrollHeight, 24) + 'px';
+
+        // decide revert: revert if no newline AND single-line width fits usableMax
+        const content = node.value || node.placeholder || '';
+        const hasNewline = /\r?\n/.test(content);
+        const singleLine = content.replace(/\r?\n/g, ' ');
+        const font = fontFor(node);
+        const textW = Math.ceil(measurer.width(singleLine, font));
+        const desired = textW + 10;
+
+        if (!hasNewline && desired <= usableMax) {
+          // revert to input
+          const caret = (typeof node.selectionStart === 'number') ? node.selectionStart : null;
+          const input = textareaToInput(node, usableMax);
+          try {
+            input.focus();
+            if (caret !== null) {
+              const pos = Math.min(input.value.length, caret);
+              input.setSelectionRange(pos, pos);
+            }
+          } catch (e){}
+          return input;
+        } else {
+          // stay as textarea; ensure it wraps
+          node.style.whiteSpace = 'pre-wrap';
+          node.style.wordWrap = 'break-word';
+          node.style.overflow = 'hidden';
+          return node;
+        }
+      }
+
+      return node;
+    }
+
+    // hookup listener that will evaluate and possibly replace node
+    function hookup(node) {
+      if (!node) return;
+      const handler = function(evt) {
+        // evt.target may be old node; get element present at same position via evt.target
+        let cur = evt.target;
+        // evaluate (may replace)
+        const newNode = evaluate(cur);
+        if (newNode && newNode !== cur) {
+          // attach handlers to new node
+          hookup(newNode);
+        }
+      };
+
+      // attach events to node
+      node.addEventListener('input', handler);
+      node.addEventListener('keyup', handler);
+      node.addEventListener('change', handler);
+      node.addEventListener('paste', function(){ setTimeout(() => handler({ target: node }), 0); });
+      node.addEventListener('focus', handler);
+
+      // initial evaluation (deferred)
+      requestAnimationFrame(() => {
+        const newNode = evaluate(node);
+        if (newNode && newNode !== node) hookup(newNode);
+      });
+    }
+
+    hookup(el);
+  }
+
+  /* ---------- Main: listen data-ready ---------- */
+  document.addEventListener('data-ready', () => {
+    try {
+      const nodes = Array.from(document.querySelectorAll('[cf-input]'));
+      nodes.forEach(n => attachSmartField(n));
+
+      // ready signal
+      setTimeout(() => document.dispatchEvent(new Event('resize-inputs-readyState')), 60);
+    } catch (err) {
+      console.error('cf-input smart error', err);
+      try { document.dispatchEvent(new Event('resize-inputs-readyState')); } catch(e){}
+    }
+  });
+
+})();
+</script>
