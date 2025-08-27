@@ -1,6 +1,9 @@
 <!-- ✅ Uploadcare Config -->
+<!-- details.surface.files -->
+<!-- detailsSurface -->
+<!-- continue-trigger="continue-5" -->
 <uc-config
-  ctx-name="kits-details.paints"
+  ctx-name="details.surface.files"
   pubkey="a4083f9a6c359a1aa43b"
   locale-name="es"
   multiple="true"
@@ -10,183 +13,195 @@
   source-list="local, gdrive, gphotos, dropbox, onedrive"
   img-only="true"
   use-cloud-image-editor="false"
-  crop-preset=""
-  cloud-image-editor-tabs="crop"
 ></uc-config>
 
 <!-- ✅ Uploadcare File Uploader -->
-<uc-file-uploader-minimal ctx-name="kits-details.paints">
-  <uc-form-input ctx-name="kits-details.paints"></uc-form-input>
+<uc-file-uploader-minimal ctx-name="details.surface.files">
+  <uc-form-input ctx-name="details.surface.files"></uc-form-input>
 </uc-file-uploader-minimal>
 
 <!-- ✅ Hidden Input vinculado -->
 <input
   type="hidden"
-  name="kits-details.paints"
-  cf-json-path="kits-details.paints"
+  name="details.surface.files"
+  cf-json-path="details.surface.files"
+  continue-trigger="continue-5"
 />
 
 <!-- ✅ Uploadcare Context Listener -->
-<uc-upload-ctx-provider ctx-name="kits-details.paints"></uc-upload-ctx-provider>
+<uc-upload-ctx-provider ctx-name="details.surface.files"></uc-upload-ctx-provider>
 <script>
-  customElements.whenDefined('uc-upload-ctx-provider').then(() => {
-    setTimeout(() => {
-      const ctxProvider = document.querySelector(
-        'uc-upload-ctx-provider[ctx-name="kits-details.paints"]'
+customElements.whenDefined('uc-upload-ctx-provider').then(() => {
+  setTimeout(() => {
+    const ctxProvider = document.querySelector(
+      'uc-upload-ctx-provider[ctx-name="details.surface.files"]'
+    );
+    if (!ctxProvider) return;
+
+    const storageKey = "uploadcare";
+    const pathKey = "details.surface.files";
+
+    /* ----------------- Utils ----------------- */
+    function getIdentity(detail) {
+      if (!detail) return null;
+      if (typeof detail === 'object') {
+        if (detail.uuid) return detail.uuid;
+        if (detail.id) return detail.id;
+        if (detail.file && (detail.file.uuid || detail.file.id)) {
+          return detail.file.uuid || detail.file.id;
+        }
+      }
+      const asString =
+        typeof detail === 'string'
+          ? detail
+          : (detail && (detail.cdnUrl || detail.url || JSON.stringify(detail)));
+      if (!asString) return null;
+      const uuidMatch = String(asString).match(
+        /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
       );
-      if (!ctxProvider) return;
+      return uuidMatch ? uuidMatch[1] : null;
+    }
 
-      const storageKey = "uploadcare";
-      const pathKey = "kits-details.paints";
-
-      /* ----------------- Utils ----------------- */
-      function getIdentity(detail) {
-        if (!detail) return null;
-        if (typeof detail === 'object') {
-          if (detail.uuid) return detail.uuid;
-          if (detail.id) return detail.id;
-          if (detail.file && (detail.file.uuid || detail.file.id)) {
-            return detail.file.uuid || detail.file.id;
-          }
-        }
-        const asString =
-          typeof detail === 'string'
-            ? detail
-            : (detail && (detail.cdnUrl || detail.url || JSON.stringify(detail)));
-        if (!asString) return null;
-        const uuidMatch = String(asString).match(
-          /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+    function getFileUrl(detail) {
+      if (!detail) return null;
+      if (typeof detail === 'string') return detail;
+      if (typeof detail === 'object') {
+        return (
+          detail.cdnUrl ||
+          detail.originalUrl ||
+          detail.url ||
+          detail.fileUrl ||
+          detail.previewUrl ||
+          null
         );
-        return uuidMatch ? uuidMatch[1] : null;
+      }
+      return null;
+    }
+
+    function normalizeStoredArray(arr) {
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .map(item => {
+          if (typeof item === 'string') return { url: item };
+          if (typeof item === 'object' && item !== null) return item;
+          return { value: item };
+        })
+        .filter(Boolean);
+    }
+
+    function findIndexInArray(arr, incoming) {
+      const incomingId = getIdentity(incoming);
+      const incomingUrl = getFileUrl(incoming);
+      for (let i = 0; i < arr.length; i++) {
+        const item = arr[i];
+        const itemId = getIdentity(item);
+        const itemUrl = getFileUrl(item);
+        if (incomingId && itemId && incomingId === itemId) return i;
+        if (!incomingId && incomingUrl && itemUrl && incomingUrl === itemUrl) return i;
+      }
+      return -1;
+    }
+
+    function updateHiddenInput(arr) {
+      const hidden = ctxProvider.closest("form")?.querySelector(
+        `input[type="hidden"][name="${pathKey}"]`
+      );
+      if (hidden) {
+        hidden.value = JSON.stringify(arr);
+        console.log("✏️ Hidden input actualizado:", hidden.value);
+      }
+    }
+
+    /* ----------------- SUBIDA / UPDATE ----------------- */
+    ctxProvider.addEventListener("file-url-changed", (e) => {
+      const DETAILS = e.detail;
+      console.log("[upload/update] file-url-changed:", DETAILS);
+
+      let store = {};
+      try {
+        store = JSON.parse(localStorage.getItem(storageKey)) || {};
+      } catch {
+        store = {};
       }
 
-      function getFileUrl(detail) {
-        if (!detail) return null;
-        if (typeof detail === 'string') return detail;
-        if (typeof detail === 'object') {
-          return (
-            detail.cdnUrl ||
-            detail.originalUrl ||
-            detail.url ||
-            detail.fileUrl ||
-            detail.previewUrl ||
-            null
-          );
+      if (!store[pathKey]) store[pathKey] = [];
+      store[pathKey] = normalizeStoredArray(store[pathKey]);
+
+      const idx = findIndexInArray(store[pathKey], DETAILS);
+
+      if (idx >= 0) {
+        const existing = store[pathKey][idx];
+        const merged = Object.assign({}, existing, DETAILS);
+        store[pathKey][idx] = merged;
+        console.log("[upload/update] Actualizado en índice", idx);
+      } else {
+        store[pathKey].push(DETAILS);
+        console.log("[upload/update] Nuevo agregado");
+      }
+
+      localStorage.setItem(storageKey, JSON.stringify(store));
+      updateHiddenInput(store[pathKey]);
+    });
+
+    /* ----------------- ELIMINACIÓN ----------------- */
+    ctxProvider.addEventListener("file-removed", (e) => {
+      const DETAILS = e.detail;
+      console.log("[remove] file-removed:", DETAILS);
+
+      let store = {};
+      try {
+        store = JSON.parse(localStorage.getItem(storageKey)) || {};
+      } catch {
+        store = {};
+      }
+
+      if (store[pathKey] && Array.isArray(store[pathKey])) {
+        store[pathKey] = normalizeStoredArray(store[pathKey]);
+        const idx = findIndexInArray(store[pathKey], DETAILS);
+        if (idx >= 0) {
+          // Emitimos evento delete-draft con uuid + size
+          const removedFile = store[pathKey][idx];
+          document.dispatchEvent(new CustomEvent("delete-draft", {
+            detail: {
+              uuid: removedFile?.uuid,
+              size: removedFile?.size
+            }
+          }));
+
+          store[pathKey].splice(idx, 1);
+          console.log("[remove] Eliminado en índice", idx);
         }
-        return null;
-      }
 
-      function normalizeStoredArray(arr) {
-        if (!Array.isArray(arr)) return [];
-        return arr
-          .map(item => {
-            if (typeof item === 'string') return { url: item };
-            if (typeof item === 'object' && item !== null) return item;
-            return { value: item };
-          })
-          .filter(Boolean);
-      }
-
-      function findIndexInArray(arr, incoming) {
-        const incomingId = getIdentity(incoming);
-        const incomingUrl = getFileUrl(incoming);
-        for (let i = 0; i < arr.length; i++) {
-          const item = arr[i];
-          const itemId = getIdentity(item);
-          const itemUrl = getFileUrl(item);
-          if (incomingId && itemId && incomingId === itemId) return i;
-          if (!incomingId && incomingUrl && itemUrl && incomingUrl === itemUrl) return i;
+        if (store[pathKey].length === 0) delete store[pathKey];
+        if (Object.keys(store).length === 0) {
+          localStorage.removeItem(storageKey);
+        } else {
+          localStorage.setItem(storageKey, JSON.stringify(store));
         }
-        return -1;
-      }
 
-      function updateHiddenInput(arr) {
+        updateHiddenInput(store[pathKey] || []);
+
+        // 🔔 Emitimos valid-change-hidden SOLO si el hidden tiene continue-trigger
         const hidden = ctxProvider.closest("form")?.querySelector(
           `input[type="hidden"][name="${pathKey}"]`
         );
         if (hidden) {
-          hidden.value = JSON.stringify(arr);
-          console.log("✏️ Hidden input actualizado:", hidden.value);
+          const continueId = hidden.getAttribute("continue-trigger");
+          if (continueId) {
+            document.dispatchEvent(new CustomEvent("valid-change-hidden", {
+              detail: { continueButtonId: continueId }
+            }));
+          }
         }
       }
+    });
 
-      /* ----------------- SUBIDA / UPDATE ----------------- */
-      ctxProvider.addEventListener("file-url-changed", (e) => {
-        const DETAILS = e.detail;
-        console.log("[upload/update] file-url-changed:", DETAILS);
-
-        let store = {};
-        try {
-          store = JSON.parse(localStorage.getItem(storageKey)) || {};
-        } catch {
-          store = {};
-        }
-
-        if (!store[pathKey]) store[pathKey] = [];
-        store[pathKey] = normalizeStoredArray(store[pathKey]);
-
-        const idx = findIndexInArray(store[pathKey], DETAILS);
-
-        if (idx >= 0) {
-          const existing = store[pathKey][idx];
-          const merged = Object.assign({}, existing, DETAILS);
-          store[pathKey][idx] = merged;
-          console.log("[upload/update] Actualizado en índice", idx);
-        } else {
-          store[pathKey].push(DETAILS);
-          console.log("[upload/update] Nuevo agregado");
-        }
-
-        localStorage.setItem(storageKey, JSON.stringify(store));
-        updateHiddenInput(store[pathKey]);
-      });
-/* ----------------- ELIMINACIÓN ----------------- */
-ctxProvider.addEventListener("file-removed", (e) => {
-  const DETAILS = e.detail;
-  console.log("[remove] file-removed:", DETAILS);
-
-  let store = {};
-  try {
-    store = JSON.parse(localStorage.getItem(storageKey)) || {};
-  } catch {
-    store = {};
-  }
-
-  if (store[pathKey] && Array.isArray(store[pathKey])) {
-    store[pathKey] = normalizeStoredArray(store[pathKey]);
-    const idx = findIndexInArray(store[pathKey], DETAILS);
-    if (idx >= 0) {
-      // antes de eliminar, emitimos el evento con uuid + size
-      const removedFile = store[pathKey][idx];
-      document.dispatchEvent(new CustomEvent("delete-draft", {
-        detail: {
-          uuid: removedFile?.uuid,
-          size: removedFile?.size
-        }
-      }));
-
-      store[pathKey].splice(idx, 1);
-      console.log("[remove] Eliminado en índice", idx);
-    }
-
-    if (store[pathKey].length === 0) delete store[pathKey];
-    if (Object.keys(store).length === 0) {
-      localStorage.removeItem(storageKey);
-    } else {
-      localStorage.setItem(storageKey, JSON.stringify(store));
-    }
-
-    updateHiddenInput(store[pathKey] || []);
-  }
-});
-
-
-    }, 100);
-  }).catch(err => console.error("❌ Error Uploadcare:", err));
+  }, 100);
+}).catch(err => console.error("❌ Error Uploadcare:", err));
 </script>
 
 
-<!-- ✅ Image size + storage validator (fixed paths) -->
+<!-- VALIDATION -->
 <script>
   function getCache(key, path) {
     try {
@@ -199,48 +214,65 @@ ctxProvider.addEventListener("file-removed", (e) => {
 
   const seenDrafts = new Set();
 
-  const imageValidator9 = (fileEntry) => {
-    const MAX_SIZE_MB = 1;
-    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+  const detailsSurface = (fileEntry) => {
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1000 * 1000;
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
     const DENIED_TYPES = ['image/svg+xml', 'image/gif'];
 
     const STORAGE_CAPACITY = getCache('offices', 'club.storage_bites');
-    const STORAGE_USED     = getCache('offices', 'club.storage_used_bites'); // <-- ruta correcta
+    const STORAGE_USED     = getCache('offices', 'club.storage_used_bites');
+    const ONLY_ALLOWED     = getCache('dynamic', 'only_allowed');
+    const MAX_SIZE_TEXT    = getCache('dynamic', 'max_size'); 
+    const YOUR_FILE_TEXT   = getCache('dynamic', 'your_file');
+    const NEED_STORAGE     = getCache('dynamic', 'need_storage');
 
     // Tipo
     if (!fileEntry.mimeType || DENIED_TYPES.includes(fileEntry.mimeType)) {
-      return { message: "No se aceptan SVG ni GIF. Solo JPG, PNG, WEBP o AVIF", code: "INVALID_TYPE" };
+      return { message: `${ONLY_ALLOWED} JPG, PNG, WEBP o AVIF`, code: "INVALID_TYPE" };
     }
     if (!ALLOWED_TYPES.includes(fileEntry.mimeType)) {
-      return { message: "Solo se permiten imágenes JPG, PNG, WEBP o AVIF", code: "INVALID_TYPE" };
+      return { message: `${ONLY_ALLOWED} JPG, PNG, WEBP o AVIF`, code: "INVALID_TYPE" };
     }
 
     // Tamaño individual
     if (fileEntry.size > MAX_SIZE_BYTES) {
-      const actualSizeMB = (fileEntry.size / (1024 * 1024)).toFixed(2);
-      return { message: `Tamaño máximo: ${MAX_SIZE_MB}MB (subes: ${actualSizeMB}MB)`, code: "SIZE_EXCEEDED" };
+      const actualSizeMB = (fileEntry.size / (1000 * 1000)).toFixed(2);
+      return { message: `${MAX_SIZE_TEXT} ${MAX_SIZE_MB} MB. ${YOUR_FILE_TEXT} ${actualSizeMB} MB.`, code: "SIZE_EXCEEDED" };
     }
 
-    // newTotal para evento y validación
-    const newTotal = (typeof STORAGE_USED === "number") ? (STORAGE_USED + fileEntry.size) : undefined;
+    // Proyección de uso (solo interna, NO se envía en el evento)
+    const projectedTotal = (typeof STORAGE_USED === "number") ? (STORAGE_USED + fileEntry.size) : undefined;
 
     // Validación de capacidad (solo si hay ambos números)
     if (typeof STORAGE_CAPACITY === "number" && typeof STORAGE_USED === "number") {
-      if (newTotal > STORAGE_CAPACITY) {
+      if (projectedTotal > STORAGE_CAPACITY) {
         return {
-          message: `Almacenamiento insuficiente (usado: ${(STORAGE_USED/1024/1024).toFixed(2)}MB / capacidad: ${(STORAGE_CAPACITY/1024/1024).toFixed(2)}MB)`,
+          message: `${NEED_STORAGE}`,
           code: "STORAGE_INSUFFICIENT"
         };
       }
     }
 
-    // Evento (una vez por UUID)
+    // Evento (una vez por UUID) -> SOLO fileEntry en detail
     if (fileEntry.uuid && !seenDrafts.has(fileEntry.uuid)) {
       seenDrafts.add(fileEntry.uuid);
       document.dispatchEvent(new CustomEvent("new-draft", {
-        detail: { uuid: fileEntry.uuid, total: newTotal }
+        detail: { fileEntry }
       }));
+    }
+
+    // 🔹 Selección directa al hidden input vinculado
+    const hiddenInput = document.querySelector('input[type="hidden"][cf-json-path="details.surface.files"]');
+
+    if (hiddenInput) {
+      const continueButtonId = hiddenInput.getAttribute("continue-trigger");
+      if (continueButtonId) {
+        document.dispatchEvent(new CustomEvent("valid-change-hidden", {
+          detail: { continueButtonId }
+        }));
+        return null; // detenemos aquí
+      }
     }
 
     return null;
@@ -248,11 +280,12 @@ ctxProvider.addEventListener("file-removed", (e) => {
 
   document.addEventListener('uploadcare-ready', () => {
     customElements.whenDefined('uc-config').then(() => {
-      const config = document.querySelector('uc-config[ctx-name="kits-details.paints"]');
-      if (config) config.fileValidators = [imageValidator9];
+      const config = document.querySelector('uc-config[ctx-name="details.surface.files"]');
+      if (config) config.fileValidators = [detailsSurface];
     });
   });
 </script>
+
 
 
 <!-- ⏫ new_draft -->
@@ -319,7 +352,6 @@ ctxProvider.addEventListener("file-removed", (e) => {
     xano.post(apiURL).catch(err => console.error("Error /delete_draft:", err));
   });
 </script>
-
 
 
 <!-- 🐞 Uploadcare components -->
