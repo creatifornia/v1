@@ -1,0 +1,373 @@
+<!-- ✅ Uploadcare Config -->
+<!--description.paints.gallery-->
+<!--descriptionPaints-->
+<!--continue-trigger="continue-5"-->
+<uc-config
+  ctx-name="description.paints.gallery"
+  pubkey="a4083f9a6c359a1aa43b"
+  locale-name="es"
+  multiple="true"
+  multiple-max="5"
+  group-output="false"
+  confirm-upload="false"
+  source-list="local, gdrive, gphotos, dropbox, onedrive"
+  img-only="true"
+  use-cloud-image-editor="false"
+></uc-config>
+
+<!-- ✅ Uploadcare File Uploader -->
+<uc-file-uploader-minimal ctx-name="description.paints.gallery">
+  <uc-form-input ctx-name="description.paints.gallery"></uc-form-input>
+</uc-file-uploader-minimal>
+
+<!-- ✅ Hidden Input vinculado -->
+<input
+  type="hidden"
+  name="description.paints.gallery"
+  cf-json-path="description.paints.gallery"
+  continue-trigger="continue-5"
+/>
+
+<!-- ✅ Uploadcare Context Listener -->
+<uc-upload-ctx-provider ctx-name="description.paints.gallery"></uc-upload-ctx-provider>
+<script>
+/*
+  Handler minimal para description.paints.gallery
+  - Guarda solo { uuid, cdnUrl, format } al event file-url-changed
+  - Envía payload reducido a /new_draft cuando se dispara 'new-draft'
+  - Sustituye en store con la respuesta íntegra y actualiza hidden input
+  - No modifica DOM del uploader (compatibilidad builder)
+*/
+
+(function () {
+  'use strict';
+
+  const storageKey = 'uploadcare';
+  const pathKey = 'description.paints.gallery';
+  const processingSet = new Set(); // evita dobles envíos
+
+  function safeParseJSON(str, fallback = null) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
+
+  function safeString(v) { return v === undefined || v === null ? '' : String(v); }
+
+  function getIdentity(detail) {
+    if (!detail) return null;
+    if (typeof detail === 'object') {
+      if (detail.uuid) return detail.uuid;
+      if (detail.id) return detail.id;
+      if (detail.file && (detail.file.uuid || detail.file.id)) return detail.file.uuid || detail.file.id;
+    }
+    const asString = typeof detail === 'string' ? detail : (detail && (detail.cdnUrl || detail.cdnURL || detail.url || JSON.stringify(detail)));
+    if (!asString) return null;
+    const m = String(asString).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    return m ? m[1] : null;
+  }
+
+  function locateRoot() {
+    // mantén compatibilidad: busca el provider, luego form, luego document
+    const provider = document.querySelector('uc-upload-ctx-provider[ctx-name="' + pathKey + '"]');
+    if (provider) {
+      return provider.closest('[uploader]') || provider.closest('.gallery') || provider.closest('form') || document;
+    }
+    return document;
+  }
+
+  function readStore() {
+    return safeParseJSON(localStorage.getItem(storageKey), {}) || {};
+  }
+
+  function writeStore(store) {
+    localStorage.setItem(storageKey, JSON.stringify(store || {}));
+  }
+
+  function normalizeEntry(detail) {
+    // Extrae solo los campos mínimos requeridos por el flujo
+    if (!detail || typeof detail !== 'object') return null;
+    const uuid = getIdentity(detail);
+    if (!uuid) return null;
+    const cdnUrl = safeString(detail.cdnUrl || detail.cdnURL || detail.originalUrl || detail.url || detail.previewUrl);
+    // determinar formato preferente
+    let format = 'unknown';
+    try {
+      format = detail.fileInfo?.imageInfo?.format || detail.fileInfo?.format || detail.mimeType || format;
+    } catch (e) { /* silent */ }
+    return { uuid, cdnUrl, format };
+  }
+
+  function findIndexByUuid(arr, uuid) {
+    if (!Array.isArray(arr)) return -1;
+    for (let i = 0; i < arr.length; i++) {
+      if (getIdentity(arr[i]) === uuid) return i;
+    }
+    return -1;
+  }
+
+  function updateHiddenFromStore(storeObj) {
+    // Guardar en hidden solo LOS OBJETOS que son respuestas del servidor (marcados __synced)
+    const root = locateRoot();
+    if (!root) return;
+    const hidden = root.querySelector('input[type="hidden"][name="' + pathKey + '"]');
+    if (!hidden) return;
+    const arr = (Array.isArray(storeObj[pathKey]) ? storeObj[pathKey] : []);
+    const processed = arr.filter(it => it && it.__synced === true).map(it => {
+      // devolver copia sin campos internos
+      const copy = Object.assign({}, it);
+      delete copy.__synced;
+      return copy;
+    });
+    hidden.value = JSON.stringify(processed);
+    // disparar continue/valid-change-hidden si corresponde
+    const continueId = hidden.getAttribute('continue-trigger');
+    if (continueId) {
+      document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail: { continueButtonId: continueId } }));
+    }
+  }
+
+  // Inyección: escucha cambios from uploadcare context
+  function initContextListener() {
+    const provider = document.querySelector('uc-upload-ctx-provider[ctx-name="' + pathKey + '"]');
+    if (!provider) return;
+
+    // file-url-changed -> guardamos solo la entrada minimal en localStorage (no tocamos hidden)
+    provider.addEventListener('file-url-changed', (ev) => {
+      const detail = ev?.detail || ev?.detail?.fileEntry || ev?.detail?.file || ev;
+      const normalized = normalizeEntry(detail);
+      if (!normalized) {
+        console.warn('paints-uploader: file-url-changed sin uuid válido', detail);
+        return;
+      }
+
+      const store = readStore();
+      if (!Array.isArray(store[pathKey])) store[pathKey] = [];
+
+      const idx = findIndexByUuid(store[pathKey], normalized.uuid);
+      if (idx >= 0) {
+        // actualizar los campos mínimos (mantener cualquier respuesta server si ya existiera)
+        const existing = store[pathKey][idx];
+        if (existing && existing.__synced === true) {
+          // si ya fue sincronizado por el servidor, no sobreescribir la respuesta con info cruda
+          // pero actualizamos cdnUrl/format si vienen vacíos
+          existing.cdnUrl = existing.cdnUrl || normalized.cdnUrl;
+          existing.format = existing.format || normalized.format;
+          store[pathKey][idx] = existing;
+        } else {
+          store[pathKey][idx] = Object.assign({}, normalized);
+        }
+      } else {
+        store[pathKey].push(Object.assign({}, normalized));
+      }
+
+      writeStore(store);
+      // no actualizamos hidden aún; esperamos respuesta new_draft
+    });
+
+    // file-removed -> eliminar del store y avisar delete-draft con uuid
+    provider.addEventListener('file-removed', (ev) => {
+      const detail = ev?.detail || ev;
+      const uuid = getIdentity(detail);
+      if (!uuid) return;
+      const store = readStore();
+      if (!Array.isArray(store[pathKey])) return;
+      const idx = findIndexByUuid(store[pathKey], uuid);
+      if (idx >= 0) {
+        // emitir delete-draft con el uuid (backend espera uuid)
+        document.dispatchEvent(new CustomEvent('delete-draft', { detail: { uuid } }));
+        store[pathKey].splice(idx, 1);
+        if (store[pathKey].length === 0) delete store[pathKey];
+        writeStore(store);
+        // actualizar hidden con lo que quede (solo server responses)
+        updateHiddenFromStore(store);
+      }
+    });
+  }
+
+  // Procesa evento global new-draft, hace llamada a backend con payload reducido opc A
+  function initNewDraftProcessor() {
+    document.addEventListener('new-draft', async (ev) => {
+      const fileEntry = ev?.detail?.fileEntry || ev?.detail;
+      if (!fileEntry) return;
+      const uuid = getIdentity(fileEntry);
+      if (!uuid) return;
+      if (processingSet.has(uuid)) return; // ya en curso
+      processingSet.add(uuid);
+
+      try {
+        // reconstruir payload reducido a partir del fileEntry (preferir cdnUrl del objeto cacheado si existe)
+        const store = readStore();
+        if (!Array.isArray(store[pathKey])) store[pathKey] = [];
+
+        // preferimos la versión cacheada si existe
+        const cachedIdx = findIndexByUuid(store[pathKey], uuid);
+        let cached = (cachedIdx >= 0) ? store[pathKey][cachedIdx] : null;
+        // construimos payload mínimo EXACTAMENTE como pediste (opción A)
+        const payload = {
+          cdnUrl: (cached && cached.cdnUrl) || fileEntry.cdnUrl || fileEntry.cdnURL || fileEntry.originalUrl || fileEntry.url || null,
+          uuid: uuid,
+          format: (cached && cached.format) || fileEntry.fileInfo?.imageInfo?.format || fileEntry.fileInfo?.format || fileEntry.mimeType || 'unknown'
+        };
+
+        // authToken y xano checks
+        const authToken = localStorage.getItem('AuthToken');
+        if (!authToken) {
+          console.error('paints-uploader: falta AuthToken para new_draft');
+          document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, reason: 'NO_AUTH' } }));
+          processingSet.delete(uuid);
+          return;
+        }
+        if (typeof xano === 'undefined' || !xano || typeof xano.post !== 'function') {
+          console.error('paints-uploader: xano no disponible para new_draft');
+          document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, reason: 'NO_XANO' } }));
+          processingSet.delete(uuid);
+          return;
+        }
+        xano.setAuthToken(authToken);
+
+        // enviar
+        const res = await xano.post('/new_draft?media=image', payload);
+
+        // se espera un objeto con al menos uuid (según tu spec)
+        if (!res || !getIdentity(res)) {
+          console.warn('paints-uploader: respuesta inesperada de new_draft', res);
+          // no abortamos: guardamos lo que haya para evitar perder info
+        }
+
+        // reemplazar en store: insertar o actualizar la entrada con la respuesta íntegra
+        const storeAfter = readStore();
+        if (!Array.isArray(storeAfter[pathKey])) storeAfter[pathKey] = [];
+
+        const responseObj = Object.assign({}, res, { __synced: true }); // marca interna
+        const idx = findIndexByUuid(storeAfter[pathKey], getIdentity(responseObj));
+        if (idx >= 0) {
+          storeAfter[pathKey][idx] = responseObj;
+        } else {
+          storeAfter[pathKey].push(responseObj);
+        }
+        writeStore(storeAfter);
+
+        // actualizar hidden con SOLO los objetos devueltos por new_draft (sin marcas internas)
+        updateHiddenFromStore(storeAfter);
+
+        // emitir evento success para UI u otros listeners
+        document.dispatchEvent(new CustomEvent('new-draft-success', { detail: { fileEntry, response: res } }));
+
+      } catch (err) {
+        console.error('paints-uploader: error en new_draft', err);
+        document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, error: err } }));
+      } finally {
+        processingSet.delete(uuid);
+      }
+    });
+  }
+
+  // Inicializar (espera que el provider exista si es necesario)
+  function boot() {
+    const provider = document.querySelector('uc-upload-ctx-provider[ctx-name="' + pathKey + '"]');
+    if (!provider) {
+      // el builder puede cargar tarde; observamos por si aparece
+      const mo = new MutationObserver((mutations, obs) => {
+        const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + pathKey + '"]');
+        if (p) {
+          obs.disconnect();
+          initContextListener();
+          initNewDraftProcessor();
+        }
+      });
+      mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      // timeout fallback: si no aparece en 10s, intentamos si acaso
+      setTimeout(() => {
+        const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + pathKey + '"]');
+        if (p) {
+          try { initContextListener(); initNewDraftProcessor(); } catch(e){ console.warn(e); }
+        } else {
+          console.warn('paints-uploader: uc-upload-ctx-provider no encontrado para', pathKey);
+        }
+      }, 10000);
+      return;
+    }
+    initContextListener();
+    initNewDraftProcessor();
+  }
+
+  // arrancar
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+})();
+</script>
+
+
+<script>
+(() => {
+  // Validación simple para description.paints.gallery
+  const seenDrafts = new Set();
+
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function descriptionPaints(fileEntry) {
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+    const DENIED_TYPES = ['image/svg+xml', 'image/gif'];
+
+    const ONLY_ALLOWED     = getCache('dynamic', 'only_allowed') || 'Solo se permiten:';
+    const MAX_SIZE_TEXT    = getCache('dynamic', 'max_size') || 'Tamaño máximo:';
+    const YOUR_FILE_TEXT   = getCache('dynamic', 'your_file') || 'Tu archivo tiene';
+
+    if (!fileEntry) return { message: 'Archivo inválido', code: 'INVALID' };
+
+    // Tipo
+    if (!fileEntry.mimeType || DENIED_TYPES.includes(fileEntry.mimeType) || !ALLOWED_TYPES.includes(fileEntry.mimeType)) {
+      return { message: `${ONLY_ALLOWED} JPG, PNG, WEBP o AVIF`, code: "INVALID_TYPE" };
+    }
+
+    // Tamaño individual
+    if (fileEntry.size > MAX_SIZE_BYTES) {
+      const actualSizeMB = (fileEntry.size / (1000 * 1000)).toFixed(2);
+      return { message: `${MAX_SIZE_TEXT} ${MAX_SIZE_MB} MB. ${YOUR_FILE_TEXT} ${actualSizeMB} MB.`, code: "SIZE_EXCEEDED" };
+    }
+
+    // Evento (una vez por UUID)
+    const uuid = (fileEntry.uuid || fileEntry.id || (fileEntry.file && fileEntry.file.uuid));
+    if (uuid && !seenDrafts.has(uuid)) {
+      seenDrafts.add(uuid);
+      // emitimos el evento que el processor escuchará y hará la llamada a new_draft
+      document.dispatchEvent(new CustomEvent("new-draft", { detail: { fileEntry } }));
+    }
+
+    // Si todo está OK, retornar null -> validación pasada
+    return null;
+  }
+
+  document.addEventListener('uploadcare-ready', () => {
+    if (customElements && customElements.whenDefined) {
+      customElements.whenDefined('uc-config').then(() => {
+        try {
+          const config = document.querySelector('uc-config[ctx-name="description.paints.gallery"]');
+          if (config) {
+            config.fileValidators = [descriptionPaints];
+            console.log('paints-validator: registrado');
+          } else {
+            console.warn('paints-validator: uc-config no encontrado');
+          }
+        } catch (e) {
+          console.error('paints-validator error', e);
+        }
+      }).catch((err) => {
+        console.error('paints-validator customElements.whenDefined error', err);
+      });
+    }
+  });
+})();
+</script>

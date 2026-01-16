@@ -1,0 +1,321 @@
+<!-- continue -->
+    <script>
+    (function(){
+      'use strict';
+    
+      // --- Configuración ---
+      const VALIDATION_DELAY = 120; // ⏱️ Ajusta el delay en ms
+    
+      // --- Módulo de validación ---
+      const ValidationModule = {
+        isFieldEmpty: function(field) {
+          const rawValue = field.value;
+          
+          if (rawValue === '[]' || rawValue === '{}' || rawValue === 'null') return true;
+          
+          try {
+            const parsed = JSON.parse(rawValue);
+            if (Array.isArray(parsed) && parsed.length === 0) return true;
+            if (typeof parsed === 'object' && Object.keys(parsed).length === 0) return true;
+          } catch (e) {
+            return !rawValue || rawValue.trim() === '';
+          }
+          
+          return false;
+        }
+      };
+    
+      // --- Scroll hacia el botón ---
+      function scrollToButton(button) {
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const isVisible = (rect.top >= 0 && rect.bottom <= window.innerHeight);
+        
+        // ⭐ Scroll suave solo si el botón no está visible en el viewport
+        if (!isVisible) {
+          button.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
+        }
+      }
+    
+      // --- Validar y actualizar botón ---
+      function validateContinueButton(buttonId) {
+        if (!buttonId) return;
+    
+        const requiredFields = document.querySelectorAll(
+          `[continue-trigger="${buttonId}"][data-required]`
+        );
+        
+        let allFilled = true;
+        const validatedInputs = [];
+        
+        requiredFields.forEach(field => {
+          const isFilled = !ValidationModule.isFieldEmpty(field);
+          if (!isFilled) {
+            allFilled = false;
+          }
+          validatedInputs.push({
+            inputId: field.id || field.getAttribute('cf-json-path') || 'Sin ID',
+            filled: isFilled
+          });
+        });
+        
+        console.log(
+          `📊 Validación del botón "${buttonId}"`, 
+          {
+            requiredInputsCount: requiredFields.length,
+            validatedInputs: validatedInputs,
+            allRequiredFilled: allFilled
+          }
+        );
+        
+        const continueButton = document.getElementById(buttonId);
+        if (!continueButton) return;
+        
+        continueButton.classList.toggle('inutil', !allFilled);
+        continueButton.disabled = !allFilled;
+        
+        // ⭐ Lógica para la clase 'has-new' y el scroll
+        if (allFilled) {
+          if (!continueButton.classList.contains('has-new')) {
+            continueButton.classList.add('has-new');
+            scrollToButton(continueButton);
+          }
+        } else {
+          continueButton.classList.remove('has-new');
+        }
+      }
+    
+      // --- Resetear botones ---
+      function resetContinueButtons(form) {
+        const scope = form || document;
+        const buttons = scope.querySelectorAll('[continue-target]');
+        buttons.forEach(button => {
+          button.classList.add('inutil');
+          button.disabled = true;
+          // ⭐ Al resetear, también quitar la clase 'has-new'
+          button.classList.remove('has-new');
+        });
+      }
+      
+      // --- Configuración inicial de listeners para inputs de texto, etc. ---
+      document.addEventListener('DOMContentLoaded', () => {
+        // Listener para inputs tradicionales
+        const inputsToValidate = document.querySelectorAll(`input[cf-json-path][continue-trigger]:not([type="hidden"]), textarea[cf-json-path][continue-trigger]`);
+        
+        inputsToValidate.forEach(input => {
+          input.addEventListener('change', (e) => {
+            const continueButtonId = e.target.getAttribute('continue-trigger');
+            if (continueButtonId) {
+              document.dispatchEvent(new CustomEvent('valid-input-change', {
+                detail: { continueButtonId: continueButtonId }
+              }));
+            }
+          });
+        });
+    
+        // 🚀 NUEVO: Listener para validación directa por clic 🚀
+        const directValidationElements = document.querySelectorAll('[direct-validation]');
+        directValidationElements.forEach(el => {
+          el.addEventListener('click', (e) => {
+            const continueButtonId = e.currentTarget.getAttribute('direct-validation');
+            if (continueButtonId) {
+              document.dispatchEvent(new CustomEvent('new-direct-validation', {
+                detail: { continueButtonId: continueButtonId }
+              }));
+            }
+          });
+        });
+        
+        // Emitir evento de finalización de configuración
+        document.dispatchEvent(new Event('input-change-ready'));
+      });
+    
+      // --- Escuchar eventos de validación ---
+      document.addEventListener('valid-change-checkbox', e => {
+        if (!e.detail || !e.detail.continueButtonId) return;
+        setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+      });
+    
+      document.addEventListener('valid-change-radio', e => {
+        if (!e.detail || !e.detail.continueButtonId) return;
+        setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+      });
+      
+      document.addEventListener('valid-change-hidden', e => {
+        if (!e.detail || !e.detail.continueButtonId) return;
+        setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+      });
+    
+      document.addEventListener('valid-input-change', e => {
+        if (!e.detail || !e.detail.continueButtonId) return;
+        setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+      });
+    
+      document.addEventListener('new-direct-validation', e => {
+        if (!e.detail || !e.detail.continueButtonId) return;
+        setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+      });
+    
+      document.addEventListener('reset-continue-buttons', e => {
+        resetContinueButtons(e.detail);
+      });
+    })();
+    </script>
+    
+    <!-- reset -->
+    <script>
+    (function () {
+      'use strict';
+    
+      /* ---------- Utils ---------- */
+      function safeJSONParse(str, fallback = null) {
+        try { return JSON.parse(str); } catch (e) { return fallback; }
+      }
+    
+      function getInitialHiddenValue(inputType) {
+        return inputType === 'checkbox' ? '[]' : '{}';
+      }
+    
+      /* ---------- Clean deep components ---------- */
+      function cleanChildComponents(container) {
+        if (!container || !(container instanceof Element)) return;
+    
+        // 1. Limpieza de elementos del Color Picker
+        container.querySelectorAll('a[color-element-template]').forEach(el => {
+          console.debug('Reset: Simulating click on color picker element:', el);
+          el.click();
+        });
+        const selectColorBtn = container.querySelector('[internal-input-select-color]');
+        if (selectColorBtn) {
+          selectColorBtn.style.borderColor = '';
+          selectColorBtn.style.color = '';
+          selectColorBtn.classList.remove('previewed');
+        }
+    
+        // 2. Limpieza de elementos de Uploader de Uploadcare
+        container.querySelectorAll('uc-file-item .uc-remove-btn').forEach(button => {
+          console.debug('Reset: Simulating click on Uploadcare remove button:', button);
+          button.click();
+        });
+    
+        // 3. Limpieza de campos contenteditable
+        container.querySelectorAll('[contenteditable="true"]').forEach(el => {
+          console.debug('Reset: Cleaning contenteditable element:', el);
+          el.innerHTML = '';
+        });
+    
+        // 4. Limpieza de inputs nativos y hidden
+        container.querySelectorAll('input, textarea, select').forEach(i => {
+          try {
+            if (i instanceof HTMLInputElement && (i.type === 'checkbox' || i.type === 'radio')) {
+              i.checked = false;
+            } else {
+              i.value = '';
+            }
+            if (i.selectedIndex !== undefined) try { i.selectedIndex = -1; } catch (e) {}
+          } catch (e) {}
+        });
+    
+        container.querySelectorAll('[component-id] input[type="hidden"][cf-json-path]').forEach(h => {
+          try {
+            const inputType = h.closest('[component-id]').getAttribute('input-type');
+            h.value = getInitialHiddenValue(inputType);
+          } catch (e) {}
+        });
+        
+        // 5. Limpieza general de clases de selección
+        const buttonComponents = container.querySelectorAll('[component-id][input-type="checkbox"], [component-id][input-type="radio"]');
+        buttonComponents.forEach(comp => {
+          const fieldClass = comp.getAttribute('f-class'); 
+          const labelClass = comp.getAttribute('l-class');
+          
+          if (fieldClass) { 
+            comp.querySelectorAll(`.${fieldClass}`).forEach(el => el.classList.remove(fieldClass));
+          }
+          if (labelClass) {
+            comp.querySelectorAll(`.${labelClass}`).forEach(el => el.classList.remove(labelClass));
+          }
+        });
+      }
+    
+      /* ---------- Reset whole form and dependencies ---------- */
+      function resetForm(formEl) {
+        document.dispatchEvent(new CustomEvent('cf-loader-on'));
+        
+        // Limpieza completa de todos los campos y componentes dentro del formulario
+        cleanChildComponents(formEl);
+    
+        // ⭐ NUEVO: Resetear el estado `active` en todos los componentes
+        const allActiveElements = formEl.querySelectorAll('[active="true"]');
+        allActiveElements.forEach(el => {
+          el.setAttribute('active', 'false');
+        });
+    
+        // Oculta todos los elementos con display-depend
+        formEl.querySelectorAll('[display-depend]').forEach(node => {
+          node.style.display = 'none';
+        });
+    
+        // Elimina data-required de todos los inputs, excepto los marcados con always-required
+        const allInputs = formEl.querySelectorAll('input, textarea, select');
+        allInputs.forEach(h => {
+          // ⭐ MODIFICACIÓN CLAVE: usar hasAttribute() en lugar de getAttribute()
+          const alwaysReq = h.hasAttribute('always-required');
+          if (!alwaysReq) {
+            h.removeAttribute('data-required');
+          }
+        });
+    
+        // Reinicia el estado de los componentes
+        const componentsToReset = formEl.querySelectorAll('[component-id]');
+        componentsToReset.forEach(compEl => {
+          const inputType = compEl.getAttribute('input-type') || 'checkbox';
+          const jsonPath = compEl.getAttribute('json-path') || '';
+          const hiddenInput = compEl.querySelector(`input[cf-json-path="${jsonPath}"]`) || compEl.querySelector('input[type="hidden"][cf-json-path]');
+          
+          const detail = {
+            componentId: compEl.getAttribute('component-id'),
+            jsonPath: hiddenInput ? hiddenInput.getAttribute('cf-json-path') : null,
+            type: inputType,
+            value: null,
+            label: '',
+            id: null,
+            isChecked: false,
+            currentValue: null
+          };
+    
+          document.dispatchEvent(new CustomEvent('option-change', { detail }));
+          if (inputType === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+          else if (inputType === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+        });
+    
+        setTimeout(() => {
+          document.dispatchEvent(new CustomEvent('cf-loader-off'));
+        }, 120);
+      }
+    
+      /* ---------- Instalar listeners ---------- */
+      function install() {
+        const reloadEls = document.querySelectorAll('[cf-reload-form]');
+        reloadEls.forEach(el => {
+          el.addEventListener('click', function (evt) {
+            try { evt.preventDefault(); } catch (e) {}
+            const form = el.closest('[cf-form-submit]') || null;
+            document.dispatchEvent(new CustomEvent('reset-continue-buttons', { detail: form }));
+            if (form) {
+              resetForm(form);
+            }
+          });
+        });
+      }
+    
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', install);
+      } else {
+        install();
+      }
+    })();
+    </script>

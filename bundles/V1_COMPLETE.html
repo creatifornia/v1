@@ -1121,6 +1121,149 @@ function buildKeywords() {
 }
 </script>
 
+<!-- corregido -->
+ <!-- 🧱 Keywords 🧱 -->
+<script>
+document.addEventListener("data-ready", buildKeywords);
+
+function getCache(key, path) {
+    try {
+        const data = JSON.parse(localStorage.getItem(key));
+        return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+        console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+        return undefined;
+    }
+}
+
+function buildKeywords() {
+    const containers = document.querySelectorAll("[cf-keywords-build]");
+
+    containers.forEach(container => {
+        const componentId = container.getAttribute("cf-keywords-build");
+        const formPath = container.getAttribute("form-path");
+        const keywordsLimit = container.getAttribute("keywords-limit");
+        const maxLength = container.getAttribute("maxlength") || "256";
+        const cfRequired = container.getAttribute("cf-required");
+        const customMessage = getCache('dynamic', 'keywords');
+        const repeatedMessage = getCache('dynamic', 'keywords-repeated');
+        const limitMessage = getCache('dynamic', 'keywords-limit');
+        const template = document.getElementById(componentId);
+
+        if (!template) {
+            console.error(`❌ No se encontró template con id="${componentId}"`);
+            return;
+        }
+
+        // CORRECCIÓN 1: Asegurar que el contenedor principal sea visible
+        container.style.display = "block";
+        container.style.opacity = "1";
+        container.style.visibility = "visible";
+
+        // Clonar el template conservando todas las clases y estructura
+        const clone = template.cloneNode(true);
+        clone.removeAttribute("id");
+        
+        // CORRECCIÓN 2: Eliminar display:none del clon
+        clone.style.display = "block";
+        container.appendChild(clone);
+
+        // Obtener elementos del clon
+        const wordsGroup = clone.querySelector("[words-group]");
+        const wordButtonTemplate = wordsGroup.querySelector("[word-button]").cloneNode(true);
+        const textFieldContainer = clone.querySelector("[text-field-container]");
+        const input = textFieldContainer.querySelector("[keywords-input]");
+        const addButton = textFieldContainer.querySelector("[add-button]");
+
+        // Eliminar el ejemplo del template clonado
+        wordsGroup.innerHTML = "";
+
+        // Configurar input
+        input.setAttribute("maxlength", maxLength);
+
+        // Crear input hidden para almacenar las palabras
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.setAttribute("cf-json-path", formPath);
+        hiddenInput.setAttribute("name", formPath);
+        hiddenInput.setAttribute("data-required-message", customMessage);
+        hiddenInput.value = "[]";
+        
+        if (cfRequired === "true") {
+            hiddenInput.setAttribute("data-required", "");
+            hiddenInput.setAttribute("always-required", "");
+
+        }
+        container.insertBefore(hiddenInput, clone);
+
+        // Estado inicial - array vacío
+        let keywords = [];
+
+        // Función para actualizar el input hidden y la vista
+        const updateKeywords = () => {
+            hiddenInput.value = JSON.stringify(keywords);
+            
+            // Actualizar vista
+            wordsGroup.innerHTML = "";
+            keywords.forEach((keyword, index) => {
+                const keywordElement = wordButtonTemplate.cloneNode(true);
+                keywordElement.querySelector("[generated-keyword]").textContent = keyword;
+                
+                keywordElement.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    keywords = keywords.filter((_, i) => i !== index);
+                    updateKeywords();
+                });
+                
+                wordsGroup.appendChild(keywordElement);
+            });
+        };
+
+        // Función para agregar nueva palabra
+        const addKeyword = () => {
+            const newKeyword = input.value.trim();
+            
+            if (!newKeyword) return;
+            
+            if (keywordsLimit && keywords.length >= parseInt(keywordsLimit)) {
+                showErrorModal(`${limitMessage} ${keywordsLimit}.`);
+                return;
+            }
+            
+            if (keywords.includes(newKeyword)) {
+                showErrorModal(repeatedMessage);
+                return;
+            }
+            
+            keywords.push(newKeyword);
+            input.value = "";
+            updateKeywords();
+        };
+
+        // Event listeners
+        addButton.addEventListener("click", (e) => {
+            e.preventDefault();
+            addKeyword();
+        });
+        
+        input.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addKeyword();
+            }
+        });
+
+        // Ocultar template original
+        template.style.display = "none";
+        
+        // Inicializar con vista vacía
+        updateKeywords();
+    });
+
+    document.dispatchEvent(new Event("keywords-builder-ready"));
+}
+</script>
+
 <!-- 💰 Currency 💰 -->
 <script>    
 document.addEventListener("data-ready", function() {
@@ -1640,38 +1783,7 @@ const ValidationModule = {
     });
 
     return isValid;
-  },
-
-  validateCurrencyFields(form) {
-    const currencyFields = form.querySelectorAll('input[type="hidden"][data-min-amount]');
-    let isValid = true;
-
-    for (const field of currencyFields) {
-      try {
-        const value = JSON.parse(field.value);
-        const minAmount = parseFloat(field.getAttribute('data-min-amount'));
-        const maxAmount = parseFloat(field.getAttribute('data-max-amount'));
-        
-        if (value.unit_amount < minAmount) {
-          showErrorModal(field.getAttribute('data-min-message'));
-          isValid = false;
-          break;
-        }
-        
-        if (value.unit_amount > maxAmount) {
-          showErrorModal(field.getAttribute('data-max-message'));
-          isValid = false;
-          break;
-        }
-      } catch (error) {
-        console.error('❌ Error validando campo monetario:', error);
-        isValid = false;
-        break;
-      }
-    }
-    
-    return isValid;
-  }
+   }
 };
 
 
@@ -1861,7 +1973,6 @@ const FormHandlerModule = {
       e.stopImmediatePropagation();
 
       if (!ValidationModule.validateRequiredFields(form)) return;
-      if (!ValidationModule.validateCurrencyFields(form)) return;
       if (!form.checkValidity()) {
         form.reportValidity();
         return;

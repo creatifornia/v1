@@ -1,0 +1,1265 @@
+<!-- builder -->
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+  function getNested(obj, path) {
+    if (!obj || !path) return undefined;
+    return path.split('.').reduce((acc, p) => (acc && acc[p] !== undefined) ? acc[p] : undefined, obj);
+  }
+  function showErrorModal(message) {
+    const modal = document.getElementById('error-modal');
+    const messageElement = document.getElementById('error-message');
+    if (modal && messageElement) {
+      messageElement.innerText = message;
+      modal.style.display = 'flex';
+    } else {
+      console.error("❌ Elementos del modal no encontrados");
+    }
+  }
+
+  function closeErrorModal() {
+    const modal = document.getElementById('error-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+   function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch (e) {
+      console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+      return undefined;
+    }
+  }
+
+
+
+  /* ---------- Estado ---------- */
+  const COMPONENTS = new Map();
+
+  /* ---------- Construcción de todos los componentes ---------- */
+  function buildAllComponents() {
+    const components = document.querySelectorAll('[component-id]');
+    components.forEach(component => {
+      try { buildComponent(component); }
+      catch (err) { console.error('BuildOptions: Error building component', component.getAttribute('component-id'), err); }
+    });
+    
+    const dependentDisplayNodes = document.querySelectorAll('[display-depend]');
+    dependentDisplayNodes.forEach(node => {
+      node.style.display = 'none';
+    });
+    
+    document.dispatchEvent(new Event('options-builder-ready'));
+  }
+
+  function buildComponent(component) {
+    const componentId = component.getAttribute('component-id');
+    const storageKey = component.getAttribute('storage-key') || null;
+    const storagePath = component.getAttribute('storage-path') || '';
+    const jsonPath = component.getAttribute('json-path') || '';
+    const dependencies = String(component.getAttribute('dependencies') || '').toLowerCase() === 'true';
+    const valueKey = component.getAttribute('value-key') || 'value';
+    const labelKey = component.getAttribute('label-key') || 'label';
+    const tagKey = component.getAttribute('tag-key') || 'tag';
+    const idKey = component.getAttribute('id-key') || 'id';
+    const clickKey = component.getAttribute('click-key') || null;
+    const imageKey = component.getAttribute('image-key') || null; //NUEVO
+    const fClass = component.getAttribute('f-class') || '';
+    const lClass = component.getAttribute('l-class') || '';
+    const continueButtonId = component.getAttribute('continue-button-id') || null;
+    const checkboxLimit = component.getAttribute('checkbox-limit') ? parseInt(component.getAttribute('checkbox-limit')) : null;
+    const inputType = (component.getAttribute('input-type') || 'checkbox').toLowerCase();
+    const groupComponentId = component.getAttribute('group-component-id') || componentId;
+    const alwaysRequired = component.getAttribute('cf-required');
+
+    if (!componentId || !jsonPath) {
+      console.error(`BuildOptions: component "${componentId}": faltan atributos mínimos (component-id, json-path).`);
+      return;
+    }
+
+    const groupEl = component.querySelector('[role="group"]');
+    if (!groupEl) {
+      console.error(`BuildOptions: component "${componentId}": falta elemento con role="group".`);
+      return;
+    }
+
+    const fieldTemplate = component.querySelector('[c-field]');
+    if (!fieldTemplate) {
+      console.error(`BuildOptions: component "${componentId}": falta plantilla [c-field].`);
+      return;
+    }
+
+    let optionsList = null;
+    if (storageKey) {
+      const raw = localStorage.getItem(storageKey);
+      const storedObj = safeJSONParse(raw, null);
+      if (storedObj) {
+        if (storagePath) optionsList = getNested(storedObj, `${storagePath}.options`);
+        else if (Array.isArray(storedObj)) optionsList = storedObj;
+        else if (Array.isArray(storedObj.options)) optionsList = storedObj.options;
+      } else {
+        console.warn(`BuildOptions: component "${componentId}": no hay datos válidos en localStorage["${storageKey}"].`);
+      }
+    }
+
+    if (!Array.isArray(optionsList) || optionsList.length === 0) {
+      optionsList = [];
+    }
+
+    let hidden = component.querySelector(`input[type="hidden"][cf-json-path="${jsonPath}"]`);
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.setAttribute('cf-json-path', jsonPath);
+      hidden.name = jsonPath;
+      component.appendChild(hidden);
+    }
+
+    if (alwaysRequired === 'true') {
+      hidden.setAttribute('data-required', '');
+      hidden.setAttribute('always-required', '');
+    }
+
+    if (continueButtonId) {
+      hidden.setAttribute('continue-trigger', continueButtonId);
+    }
+
+    if (inputType === 'checkbox') hidden.value = hidden.value || '[]';
+    else hidden.value = hidden.value || '{}';
+
+    while (groupEl.firstChild) groupEl.removeChild(groupEl.firstChild);
+
+    if (optionsList.length) {
+      optionsList.forEach(item => {
+        const clone = fieldTemplate.cloneNode(true);
+        const tagEl = clone.querySelector('[c-tag]');
+        const imgEl = clone.querySelector('[c-image]'); //NUEVO
+        const labelEl = clone.querySelector('[c-label]');
+        const nativeInput = clone.querySelector('[native-button], input[type="checkbox"], input[type="radio"], input');
+
+        const labelText = String(item[labelKey] ?? '');
+        const tagText = String(item[tagKey] ?? '').trim();
+        const imgText = imageKey ? String(item[imageKey] ?? '').trim() : '';//NUEVO
+        const valText = String(item[valueKey] ?? '');
+        const idVal = idKey ? (item[idKey] !== undefined ? String(item[idKey]) : null) : null;
+        const clickVal = clickKey ? (item[clickKey] !== undefined ? String(item[clickKey]) : null) : null;
+
+        if (idVal) clone.setAttribute('data-id', idVal);
+        clone.setAttribute('active', 'false');
+
+        if (labelEl) labelEl.textContent = labelText;
+        if (tagEl) {
+          if (tagText) { tagEl.textContent = tagText; tagEl.style.display = ''; }
+          else { tagEl.textContent = ''; tagEl.style.display = 'none'; }
+        }
+
+         if (imgEl) {
+          // tratamos imgEl como el <img> nativo de Webflow (sin buscar internals)
+          const nativeImg = imgEl;
+
+          // siempre establecer alt directamente con valText (sin validaciones)
+          nativeImg.setAttribute('alt', valText);
+
+          if (imgText) {
+            // asignar src si cambió (evita recargas innecesarias)
+            if (nativeImg.getAttribute('src') !== imgText) nativeImg.src = imgText;
+            // mantener data-src por compatibilidad con lazy loaders (no imprescindible)
+            nativeImg.setAttribute('data-src', imgText);
+            // no tocamos loading ni srcset
+            nativeImg.style.display = '';
+          } else {
+            // no hay URL: limpiar y ocultar
+            nativeImg.removeAttribute('src');
+            nativeImg.removeAttribute('data-src');
+            // alt ya establecido a valText arriba
+            nativeImg.style.display = 'none';
+          }
+        }
+
+        if (nativeInput) {
+          nativeInput.type = inputType;
+          nativeInput.setAttribute('data-opt-value', valText);
+          nativeInput.setAttribute('data-opt-label', labelText);
+          if (idVal) nativeInput.setAttribute('data-opt-id', idVal);
+          if (tagText) nativeInput.setAttribute('data-opt-tag', tagText);
+          if (clickVal) nativeInput.setAttribute('data-opt-click', clickVal);
+          if (inputType === 'radio') nativeInput.name = groupComponentId;
+        } else {
+          console.warn(`BuildOptions: component "${componentId}": clone c-field no contiene native-button ni input detectable.`);
+        }
+
+        if (clickVal) clone.setAttribute('cl', clickVal);
+        groupEl.appendChild(clone);
+      });
+    }
+
+    if (!groupEl._hasDelegate) {
+      groupEl.addEventListener('change', (evt) => onGroupChange(evt, componentId));
+      groupEl._hasDelegate = true;
+    }
+
+    // --- NUEVO: Listener de click para la funcionalidad "Otros" ---
+    if (!groupEl._hasClickDelegate) {
+        groupEl.addEventListener('click', (evt) => onGroupClick(evt, componentId));
+        groupEl._hasClickDelegate = true;
+    }
+
+    COMPONENTS.set(componentId, {
+      componentId, componentEl: component, storageKey, storagePath, jsonPath, dependencies,
+      valueKey, labelKey, tagKey, idKey, clickKey, fClass, lClass, continueButtonId,
+      checkboxLimit, inputType, groupEl, fieldTemplate, hiddenEl: hidden, alwaysRequired,
+      currentValue: inputType === 'checkbox' ? [] : {}
+    });
+
+    syncUIFromHidden(componentId);
+  }
+
+  /* ---------- Sincronizar UI inicial desde hidden ---------- */
+  function syncUIFromHidden(componentId) {
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+    const { hiddenEl, inputType, groupEl, fClass, lClass } = state;
+    const raw = hiddenEl.value;
+    if (raw === undefined || raw === null) return;
+    const parsed = safeJSONParse(raw, null);
+
+    groupEl.querySelectorAll('[c-field]').forEach(fe => {
+      if (fClass) fe.classList.remove(fClass);
+      fe.setAttribute('active', 'false');
+      const lab = fe.querySelector('[c-label]');
+      if (lab && lClass) lab.classList.remove(lClass);
+      const inp = fe.querySelector('[native-button], input');
+      if (inp) inp.checked = false;
+    });
+
+    if (inputType === 'checkbox' && Array.isArray(parsed)) {
+      parsed.forEach(item => {
+        groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+          if (String(inp.getAttribute('data-opt-value')) === String(item.value)) {
+            inp.checked = true;
+            const fe = inp.closest('[c-field]');
+            if(fe) {
+              if(fClass) fe.classList.add(fClass);
+              fe.setAttribute('active', 'true');
+              const lab = fe.querySelector('[c-label]');
+              if (lab) {
+                if(lClass) lab.classList.add(lClass);
+                // --- MODIFICADO: Asegura que el label custom se cargue al inicio ---
+                lab.textContent = item.label;
+              }
+            }
+          }
+        });
+      });
+      state.currentValue = parsed.slice();
+    } else if (inputType === 'radio' && parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+      groupEl.querySelectorAll('[native-button], input').forEach(inp => {
+        if (String(inp.getAttribute('data-opt-value')) === String(parsed.value)) {
+          inp.checked = true;
+          const fe = inp.closest('[c-field]');
+          if(fe) {
+            if(fClass) fe.classList.add(fClass);
+            fe.setAttribute('active', 'true');
+            const lab = fe.querySelector('[c-label]');
+            if (lab) {
+              if (lClass) lab.classList.add(lClass);
+              // --- MODIFICADO: Asegura que el label custom se cargue al inicio ---
+              lab.textContent = parsed.label;
+            }
+          }
+        }
+      });
+      state.currentValue = parsed;
+    } else {
+      state.currentValue = inputType === 'checkbox' ? [] : {};
+    }
+  }
+
+  /* ---------- Cambio delegado en role=group ---------- */
+  function onGroupChange(evt, componentId) {
+    const input = evt.target;
+    if (!input || !(input instanceof HTMLInputElement)) return;
+
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+
+    const { inputType, hiddenEl, checkboxLimit, fClass, lClass, groupEl } = state;
+    const value = input.getAttribute('data-opt-value');
+    const label = input.getAttribute('data-opt-label') || '';
+    const id = input.getAttribute('data-opt-id') || null;
+    const isChecked = input.checked;
+    const maxMessage = getCache('dynamic', 'max-checkbox');
+
+    if (inputType === 'checkbox') {
+      let current = safeJSONParse(hiddenEl.value, []);
+      current = Array.isArray(current) ? current : [];
+
+      const exists = current.some(it => String(it.value) === String(value));
+      if (isChecked && !exists) {
+        if (checkboxLimit && current.length >= checkboxLimit) {
+          showErrorModal(`${maxMessage} ${checkboxLimit}`);
+          input.checked = false;
+          return;
+        }
+        const entry = { value, label };
+        if (id) entry.id = id;
+        current.push(entry);
+      } else if (!isChecked && exists) {
+        current = current.filter(it => String(it.value) !== String(value));
+        // --- MODIFICADO: Resetea el label de "Otros" al deseleccionar ---
+        if (value === 'others') {
+            const fieldEl = input.closest('[c-field]');
+            const labelEl = fieldEl ? fieldEl.querySelector('[c-label]') : null;
+            if (labelEl) {
+                labelEl.textContent = label; // Resetea al label original
+            }
+        }
+      }
+
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.toggle(fClass, isChecked);
+      fieldEl && fieldEl.setAttribute('active', isChecked ? 'true' : 'false');
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.toggle(lClass, isChecked);
+
+      hiddenEl.value = JSON.stringify(current);
+      state.currentValue = current.slice();
+
+      emitOptionEvents('checkbox', state, input, { value, label, id, isChecked, currentValue: current });
+
+    } else if (inputType === 'radio') {
+      const entry = { value, label };
+      if (id) entry.id = id;
+
+      groupEl.querySelectorAll('[c-field]').forEach(fe => {
+        fClass && fe.classList.remove(fClass);
+        fe.setAttribute('active', 'false');
+        const lab = fe.querySelector('[c-label]');
+        lab && lClass && lab.classList.remove(lClass);
+      });
+
+      const fieldEl = input.closest('[c-field]');
+      fieldEl && fClass && fieldEl.classList.add(fClass);
+      fieldEl && fieldEl.setAttribute('active', 'true');
+      const lab = fieldEl && fieldEl.querySelector('[c-label]');
+      lab && lClass && lab.classList.add(lClass);
+
+      hiddenEl.value = JSON.stringify(entry);
+      state.currentValue = Object.assign({}, entry);
+
+      emitOptionEvents('radio', state, input, { value, label, id, isChecked: true, currentValue: state.currentValue });
+    }
+  }
+
+  // --- NUEVO: Handler para el evento click, gestiona la edición de "Otros" ---
+  function onGroupClick(evt, componentId) {
+    const fieldEl = evt.target.closest('[c-field]');
+    if (!fieldEl) return;
+
+    const nativeInput = fieldEl.querySelector('[native-button], input');
+    if (!nativeInput || nativeInput.getAttribute('data-opt-value') !== 'others' || !nativeInput.checked) {
+        return;
+    }
+
+    const labelEl = fieldEl.querySelector('[c-label]');
+    if (labelEl && !labelEl.isContentEditable) {
+        makeLabelEditable(labelEl, nativeInput, componentId);
+    }
+  }
+
+  // --- NUEVO: Convierte un label en editable ---
+function makeLabelEditable(labelEl, nativeInput, componentId) {
+    const originalLabel = nativeInput.getAttribute('data-opt-label');
+
+    // Si el texto es el original, lo vaciamos para dar feedback de edición
+    if (labelEl.textContent === originalLabel) {
+        labelEl.textContent = '';
+    }
+
+    labelEl.contentEditable = true;
+    labelEl.classList.add('is-editing'); // Para estilos CSS opcionales: [c-label].is-editing
+    labelEl.focus();
+
+    // Si ya hay texto (y no es exactamente el original vaciado), seleccionamos todo como antes.
+    // Si está vacío, insertamos temporalmente un ZERO WIDTH SPACE para que el caret
+    // se coloque correctamente en el nodo de texto.
+    let zwspNode = null;
+    const hasVisibleText = (labelEl.textContent || '').trim().length > 0;
+
+    if (!hasVisibleText) {
+        zwspNode = document.createTextNode('\u200B');
+        labelEl.appendChild(zwspNode);
+    }
+
+    // Acomodar la selección después del reflow para evitar caret "fuera de lugar"
+    requestAnimationFrame(() => {
+        const selection = window.getSelection();
+        const range = document.createRange();
+
+        if (hasVisibleText) {
+            // comportamiento original: seleccionar todo el contenido
+            range.selectNodeContents(labelEl);
+        } else if (zwspNode) {
+            // colocar caret al final del ZWSP (de forma que quede visualmente en la posición correcta)
+            range.setStart(zwspNode, zwspNode.length);
+            range.collapse(true);
+        } else {
+            range.selectNodeContents(labelEl);
+        }
+
+        selection.removeAllRanges();
+        selection.addRange(range);
+    });
+
+    // Si el usuario comienza a escribir, quitamos cualquier ZWSP que hayamos puesto
+    const onInput = () => {
+        if (!zwspNode) return;
+        // reemplazar cualquier ZWSP en el contenido; la inserción del usuario permanecerá
+        const before = labelEl.textContent;
+        const after = before.replace(/\u200B/g, '');
+        if (before !== after) {
+            labelEl.textContent = after;
+            // reubicar caret al final tras limpiar
+            const sel = window.getSelection();
+            const r = document.createRange();
+            const lastNode = labelEl.firstChild && labelEl.firstChild.nodeType === Node.TEXT_NODE
+                ? labelEl.firstChild
+                : labelEl;
+            r.setStart(lastNode, lastNode.length || 0);
+            r.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r);
+        }
+        // ya no necesitamos este listener
+        labelEl.removeEventListener('input', onInput);
+        zwspNode = null;
+    };
+
+    const onBlur = () => {
+        labelEl.contentEditable = false;
+        labelEl.classList.remove('is-editing');
+
+        // quitar cualquier ZWSP que haya quedado y normalizar
+        let newText = (labelEl.textContent || '').replace(/\u200B/g, '').trim();
+
+        if (newText === '') {
+            newText = originalLabel;
+            labelEl.textContent = newText;
+        } else {
+            labelEl.textContent = newText;
+        }
+
+        updateHiddenStateLabel(componentId, newText);
+
+        // Limpieza de listeners
+        labelEl.removeEventListener('blur', onBlur);
+        labelEl.removeEventListener('keydown', onKeydown);
+        labelEl.removeEventListener('input', onInput);
+    };
+
+    const onKeydown = (e) => {
+        // Guardar con Enter, prevenir salto de línea
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            labelEl.blur();
+        }
+    };
+
+    labelEl.addEventListener('blur', onBlur);
+    labelEl.addEventListener('keydown', onKeydown);
+    labelEl.addEventListener('input', onInput);
+}
+
+  // --- NUEVO: Actualiza el label en el valor del input hidden ---
+  function updateHiddenStateLabel(componentId, newLabel) {
+    const state = COMPONENTS.get(componentId);
+    if (!state) return;
+
+    const { hiddenEl, inputType } = state;
+    let current = safeJSONParse(hiddenEl.value, inputType === 'checkbox' ? [] : {});
+    
+    if (inputType === 'checkbox' && Array.isArray(current)) {
+        const otherIndex = current.findIndex(item => item.value === 'others');
+        if (otherIndex > -1) {
+            current[otherIndex].label = newLabel;
+        }
+    } else if (inputType === 'radio' && current.value === 'others') {
+        current.label = newLabel;
+    }
+
+    const newJsonValue = JSON.stringify(current);
+    hiddenEl.value = newJsonValue;
+    state.currentValue = current;
+    
+    // Dispara un evento para notificar que el valor (aunque sea solo el label) cambió
+    document.dispatchEvent(new CustomEvent('option-value-updated', { detail: { componentId, value: newJsonValue } }));
+  }
+
+  /* ---------- Emitir eventos (compatibles con handlers) ---------- */
+  function emitOptionEvents(type, state, input, payload) {
+    const detail = {
+      componentId: state.componentId, jsonPath: state.jsonPath, type,
+      value: payload.value, label: payload.label, id: payload.id, isChecked: payload.isChecked,
+      currentValue: payload.currentValue, alwaysRequired: state.alwaysRequired,
+      dependencies: state.dependencies, continueButtonId: state.continueButtonId,
+    };
+
+    console.group(`📤 Emitiendo evento de opción (${type})`);
+    console.table(detail);
+    console.groupEnd();
+
+    document.dispatchEvent(new CustomEvent('option-change', { detail }));
+    if (type === 'checkbox') {
+      document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+    } else if (type === 'radio') {
+      document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+    }
+  }
+
+  /* ---------- Inicialización: escuchar data-ready ---------- */
+  document.addEventListener('data-ready', buildAllComponents);
+
+  // Exponer para debugging
+  window.__OptionsBuilder = { COMPONENTS };
+
+})();
+</script>
+
+<!-- checkbox -->
+<script>
+(function(){
+  'use strict';
+
+  function cleanSubComponents(container) {
+    if (!container || !(container instanceof Element)) return;
+    
+       // 1. Limpieza de elementos del Color Picker
+container.querySelectorAll('a[color-element-template]').forEach(el => {
+    console.debug('Simulating click on color picker element:', el);
+    el.click(); // Simula un clic para activar la lógica de eliminación
+});
+
+// 2. Restauración del botón de selección de color
+const selectColorBtn = container.querySelector('[internal-input-select-color]');
+if (selectColorBtn) {
+    selectColorBtn.style.borderColor = '';
+    selectColorBtn.style.color = '';
+    selectColorBtn.classList.remove('previewed');
+}
+    
+    // 3. Limpieza de elementos del Uploader de Uploadcare
+    // Selector más específico para el botón de eliminar dentro de cada item de archivo
+    container.querySelectorAll('uc-file-item .uc-remove-btn').forEach(button => {
+      console.debug('Simulating click on Uploadcare remove button in container:', button);
+      button.click();
+    });
+
+    // 4. Limpieza de campos contenteditable
+    container.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      console.debug('Cleaning contenteditable element in container:', el);
+      el.innerHTML = '';
+    });
+    
+    // 5. Limpieza de inputs nativos y hidden
+    container.querySelectorAll('input, textarea, select').forEach(i => {
+        try {
+            if (i instanceof HTMLInputElement && (i.type === 'checkbox' || i.type === 'radio')) {
+                i.checked = false;
+            } else {
+                i.value = '';
+            }
+            if (i.selectedIndex !== undefined) try { i.selectedIndex = -1; } catch(e){}
+        } catch(e) {}
+    });
+    
+    container.querySelectorAll('[component-id] input[type="hidden"][cf-json-path]').forEach(h => {
+        try {
+            const inputType = h.closest('[component-id]').getAttribute('input-type');
+            h.value = (inputType === 'checkbox') ? '[]' : (inputType === 'radio' ? '{}' : '');
+        } catch(e) {}
+    });
+
+    // 6. Limpieza de clases de selección para Checkboxes y Radios dentro del contenedor
+    const buttonComponents = container.querySelectorAll('[component-id][input-type="checkbox"], [component-id][input-type="radio"]');
+    buttonComponents.forEach(comp => {
+      const fieldClass = comp.getAttribute('f-class');
+      const labelClass = comp.getAttribute('l-class');
+      
+      if (fieldClass) {
+        comp.querySelectorAll(`.${fieldClass}`).forEach(el => el.classList.remove(fieldClass));
+      }
+      if (labelClass) {
+        comp.querySelectorAll(`.${labelClass}`).forEach(el => el.classList.remove(labelClass));
+      }
+    });
+  }
+
+  document.addEventListener('valid-change-checkbox', (e) => {
+    try {
+      const detail = e.detail || {};
+      const componentId = detail.componentId;
+      const dependencies = !!detail.dependencies;
+      const currentValue = Array.isArray(detail.currentValue) ? detail.currentValue : [];
+      const currentValues = currentValue.map(it => String(it.value));
+      const jsonPath = detail.jsonPath || null;
+      const continueButtonId = detail.continueButtonId || null;
+
+      if (!componentId) return;
+
+      const component = document.querySelector(`[component-id="${componentId}"]`);
+      if (!component) return;
+      const scope = component.closest('[cf-form-submit]') || document;
+
+      // Actualiza el hidden input principal y dispara su evento
+      if (jsonPath) {
+        let compHidden = component.querySelector(`input[cf-json-path="${jsonPath}"]`);
+        if (!compHidden) compHidden = component.querySelector(`input[type="hidden"][cf-json-path]`);
+        if (compHidden) {
+          try {
+            compHidden.value = JSON.stringify(currentValue);
+            compHidden.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (err) {
+            console.error('CBX-2: error setting hidden value', err);
+          }
+        }
+      }
+
+      if (!dependencies) {
+        return;
+      }
+
+      const nodesToHandle = scope.querySelectorAll(`[display-depend="${componentId}"], [required-depend="${componentId}"]`);
+
+      nodesToHandle.forEach(node => {
+        // leer match como lista separada por comas
+const rawMatch = node.getAttribute('match') || '';
+const matches = String(rawMatch)
+  .split(/\s*,\s*/).filter(Boolean); // -> ["match1","match2",...]
+
+const isDisplayDepend = node.hasAttribute('display-depend');
+const isRequiredDepend = node.hasAttribute('required-depend');
+
+// Si hay matches, activar cuando alguno coincida con currentValues
+const shouldActivate = matches.length
+  ? matches.some(m => currentValues.includes(String(m)))
+  : (currentValues.length > 0);
+
+
+        if (isDisplayDepend) {
+          const isCurrentlyVisible = node.style.display !== 'none';
+          if (shouldActivate && !isCurrentlyVisible) {
+            node.style.display = '';
+
+            // La clave: retrasar la limpieza de sub-dependientes
+            setTimeout(() => {
+                node.querySelectorAll('[sub-dep="true"]').forEach(subDep => {
+                    subDep.style.display = 'none';
+                    cleanSubComponents(subDep);
+                    subDep.querySelectorAll('[data-required]').forEach(el => el.removeAttribute('data-required'));
+                });
+            }, 50);
+
+          } else if (!shouldActivate && isCurrentlyVisible) {
+            node.style.display = 'none';
+            cleanSubComponents(node);
+          }
+        }
+
+        if (isRequiredDepend) {
+          const candidates = Array.from(node.querySelectorAll('[cf-json-path]')).filter(el => el && el.matches('input,textarea,select'));
+          const isCurrentlyRequired = candidates.length > 0 && candidates[0].hasAttribute('data-required');
+
+          if (shouldActivate && !isCurrentlyRequired) {
+            candidates.forEach(h => h.setAttribute('data-required', ''));
+          } else if (!shouldActivate && isCurrentlyRequired) {
+            candidates.forEach(h => {
+              // ⭐ MODIFICACIÓN CLAVE: Comprobar la existencia del atributo, no su valor.
+              const alwaysReq = h.hasAttribute('always-required');
+              if (!alwaysReq) {
+                h.removeAttribute('data-required');
+                cleanSubComponents(node);
+              }
+            });
+          }
+        }
+      });
+
+      // === Validaciones de dependencia unificadas (con delay) ===
+      setTimeout(() => {
+        const allDependentNodes = scope.querySelectorAll('[validate-parent], [validate-input]');
+
+        allDependentNodes.forEach(node => {
+          const validateParentID = node.getAttribute('validate-parent');
+          const validateInputID = node.getAttribute('validate-input');
+          
+          let parentIsVisible = true;
+          if (validateParentID) {
+            const parentNode = scope.querySelector(`[parent-id="${validateParentID}"]`);
+            parentIsVisible = parentNode && parentNode.style.display !== 'none';
+          }
+
+          let inputIsActive = true;
+          if (validateInputID) {
+            const cField = scope.querySelector(`[c-field][data-id="${validateInputID}"]`);
+            inputIsActive = cField && cField.getAttribute('active') === 'true';
+          }
+
+          const shouldActivate = parentIsVisible && inputIsActive;
+          const inputs = node.querySelectorAll('input, textarea, select');
+          
+          if (shouldActivate) {
+            node.style.display = '';
+            inputs.forEach(input => input.setAttribute('data-required', ''));
+          } else {
+            node.style.display = 'none';
+            inputs.forEach(input => input.removeAttribute('data-required'));
+            cleanSubComponents(node);
+          }
+        });
+      }, 50);
+
+      if (continueButtonId) {
+        try {
+          document.dispatchEvent(new CustomEvent('trigger-validate-continue', { detail: { continueButtonId } }));
+        } catch(e){}
+      }
+
+    } catch (err) {
+      console.error('CBX-2 handler error', err);
+    }
+  });
+})();
+</script>
+
+<!-- radio -->
+<script>
+(function(){
+  'use strict';
+
+  function cleanSubComponents(container) {
+    if (!container || !(container instanceof Element)) return;
+    
+    // 1. Limpieza de elementos del Color Picker
+    container.querySelectorAll('a[color-element-template]').forEach(el => {
+      console.debug('Simulating click on color picker element:', el);
+      el.click(); // Simula un clic para activar la lógica de eliminación
+    });
+
+    // 2. Restauración del botón de selección de color
+    const selectColorBtn = container.querySelector('[internal-input-select-color]');
+    if (selectColorBtn) {
+      selectColorBtn.style.borderColor = '';
+      selectColorBtn.style.color = '';
+      selectColorBtn.classList.remove('previewed');
+    }
+    // 3. Limpieza de elementos del Uploader de Uploadcare
+    // Selector más específico para el botón de eliminar dentro de cada item de archivo
+    container.querySelectorAll('uc-file-item .uc-remove-btn').forEach(button => {
+      console.debug('Simulating click on Uploadcare remove button in container:', button);
+      button.click();
+    });
+
+    // 4. Limpieza de campos contenteditable
+    container.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      console.debug('Cleaning contenteditable element in container:', el);
+      el.innerHTML = '';
+    });
+    
+    // 5. Limpieza de inputs nativos y hidden
+    container.querySelectorAll('input, textarea, select').forEach(i => {
+        try {
+            if (i instanceof HTMLInputElement && (i.type === 'checkbox' || i.type === 'radio')) {
+                i.checked = false;
+            } else {
+                i.value = '';
+            }
+            if (i.selectedIndex !== undefined) try { i.selectedIndex = -1; } catch(e){}
+        } catch(e) {}
+    });
+
+    container.querySelectorAll('[component-id] input[type="hidden"][cf-json-path]').forEach(h => {
+        try {
+            const inputType = h.closest('[component-id]').getAttribute('input-type');
+            h.value = (inputType === 'checkbox') ? '[]' : (inputType === 'radio' ? '{}' : '');
+        } catch(e) {}
+    });
+
+    // 6. Limpieza de clases de selección para Radios y Checkboxes dentro del contenedor
+    const buttonComponents = container.querySelectorAll('[component-id][input-type="checkbox"], [component-id][input-type="radio"]');
+    buttonComponents.forEach(comp => {
+      const fieldClass = comp.getAttribute('f-class');
+      const labelClass = comp.getAttribute('l-class');
+      
+      if (fieldClass) {
+        comp.querySelectorAll(`.${fieldClass}`).forEach(el => el.classList.remove(fieldClass));
+      }
+      if (labelClass) {
+        comp.querySelectorAll(`.${labelClass}`).forEach(el => el.classList.remove(labelClass));
+      }
+    });
+  }
+
+  document.addEventListener('valid-change-radio', (e) => {
+    try {
+      const detail = e.detail || {};
+      const componentId = detail.componentId;
+      const dependencies = !!detail.dependencies;
+      const currentValue = detail.currentValue || null;
+      const jsonPath = detail.jsonPath || null;
+      const continueButtonId = detail.continueButtonId || null;
+
+      if (!componentId) return;
+      
+      const component = document.querySelector(`[component-id="${componentId}"]`);
+      if (!component) return;
+      const scope = component.closest('[cf-form-submit]') || document;
+      
+      // Actualiza el hidden input principal y dispara su evento
+      if (jsonPath) {
+        let compHidden = component.querySelector(`input[cf-json-path="${jsonPath}"]`);
+        if (!compHidden) compHidden = component.querySelector(`input[type="hidden"][cf-json-path]`);
+        if (compHidden) {
+          try {
+            compHidden.value = JSON.stringify(currentValue);
+            compHidden.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (err) {
+            console.error('RAD-2: error setting hidden value', err);
+          }
+        }
+      }
+
+      if (!dependencies) {
+        return;
+      }
+
+      const nodesToHandle = scope.querySelectorAll(`[display-depend="${componentId}"], [required-depend="${componentId}"]`);
+
+      nodesToHandle.forEach(node => {
+        // leer match como lista separada por comas
+const rawMatch = node.getAttribute('match') || '';
+const matches = String(rawMatch)
+  .split(/\s*,\s*/).filter(Boolean); // -> ["match1","match2",...]
+
+const isDisplayDepend = node.hasAttribute('display-depend');
+const isRequiredDepend = node.hasAttribute('required-depend');
+
+const currentVal = currentValue ? String(currentValue.value) : null;
+
+// Si hay matches, activar cuando currentVal coincida con alguno
+const shouldActivate = matches.length
+  ? (currentVal !== null && matches.includes(String(currentVal)))
+  : (currentVal !== null);
+
+
+        if (isDisplayDepend) {
+          const isCurrentlyVisible = node.style.display !== 'none';
+          if (shouldActivate && !isCurrentlyVisible) {
+            node.style.display = '';
+
+            // La clave: retrasar la limpieza de sub-dependientes
+            setTimeout(() => {
+                node.querySelectorAll('[sub-dep="true"]').forEach(subDep => {
+                    subDep.style.display = 'none';
+                    cleanSubComponents(subDep);
+                    subDep.querySelectorAll('[data-required]').forEach(el => el.removeAttribute('data-required'));
+                });
+            }, 50);
+          } else if (!shouldActivate && isCurrentlyVisible) {
+            node.style.display = 'none';
+            cleanSubComponents(node);
+          }
+        }
+
+        if (isRequiredDepend) {
+          const candidates = Array.from(node.querySelectorAll('[cf-json-path]')).filter(el => el && el.matches('input,textarea,select'));
+          const isCurrentlyRequired = candidates.length > 0 && candidates[0].hasAttribute('data-required');
+
+          if (shouldActivate && !isCurrentlyRequired) {
+            candidates.forEach(h => h.setAttribute('data-required', ''));
+          } else if (!shouldActivate && isCurrentlyRequired) {
+            candidates.forEach(h => {
+              // ⭐ MODIFICACIÓN CLAVE: Comprobar la existencia del atributo, no su valor.
+              const alwaysReq = h.hasAttribute('always-required');
+              if (!alwaysReq) {
+                h.removeAttribute('data-required');
+                cleanSubComponents(node);
+              }
+            });
+          }
+        }
+      });
+
+      // === Validaciones de dependencia unificadas (con delay) ===
+      setTimeout(() => {
+        const allDependentNodes = scope.querySelectorAll('[validate-parent], [validate-input]');
+
+        allDependentNodes.forEach(node => {
+          const validateParentID = node.getAttribute('validate-parent');
+          const validateInputID = node.getAttribute('validate-input');
+          
+          let parentIsVisible = true;
+          if (validateParentID) {
+            const parentNode = scope.querySelector(`[parent-id="${validateParentID}"]`);
+            parentIsVisible = parentNode && parentNode.style.display !== 'none';
+          }
+
+          let inputIsActive = true;
+          if (validateInputID) {
+            const cField = scope.querySelector(`[c-field][data-id="${validateInputID}"]`);
+            inputIsActive = cField && cField.getAttribute('active') === 'true';
+          }
+
+          const shouldActivate = parentIsVisible && inputIsActive;
+          const inputs = node.querySelectorAll('input, textarea, select');
+          
+          if (shouldActivate) {
+            node.style.display = '';
+            inputs.forEach(input => input.setAttribute('data-required', ''));
+          } else {
+            node.style.display = 'none';
+            inputs.forEach(input => input.removeAttribute('data-required'));
+            cleanSubComponents(node);
+          }
+        });
+      }, 50);
+
+      if (continueButtonId) {
+        try {
+          document.dispatchEvent(new CustomEvent('trigger-validate-continue', { detail: { continueButtonId } }));
+        } catch(e){}
+      }
+
+    } catch (err) {
+      console.error('RAD-2 handler error', err);
+    }
+  });
+})();
+</script>
+
+<!-- continue -->
+<script>
+(function(){
+  'use strict';
+
+  // --- Configuración ---
+  const VALIDATION_DELAY = 120; // ⏱️ Ajusta el delay en ms
+
+  // --- Módulo de validación ---
+  const ValidationModule = {
+    isFieldEmpty: function(field) {
+      const rawValue = field.value;
+      
+      if (rawValue === '[]' || rawValue === '{}' || rawValue === 'null') return true;
+      
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed) && parsed.length === 0) return true;
+        if (typeof parsed === 'object' && Object.keys(parsed).length === 0) return true;
+      } catch (e) {
+        return !rawValue || rawValue.trim() === '';
+      }
+      
+      return false;
+    }
+  };
+
+  // --- Scroll hacia el botón ---
+  function scrollToButton(button) {
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const isVisible = (rect.top >= 0 && rect.bottom <= window.innerHeight);
+    
+    // ⭐ Scroll suave solo si el botón no está visible en el viewport
+    if (!isVisible) {
+      button.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  }
+
+  // --- Validar y actualizar botón ---
+  function validateContinueButton(buttonId) {
+    if (!buttonId) return;
+
+    const requiredFields = document.querySelectorAll(
+      `[continue-trigger="${buttonId}"][data-required]`
+    );
+    
+    let allFilled = true;
+    const validatedInputs = [];
+    
+    requiredFields.forEach(field => {
+      const isFilled = !ValidationModule.isFieldEmpty(field);
+      if (!isFilled) {
+        allFilled = false;
+      }
+      validatedInputs.push({
+        inputId: field.id || field.getAttribute('cf-json-path') || 'Sin ID',
+        filled: isFilled
+      });
+    });
+    
+    console.log(
+      `📊 Validación del botón "${buttonId}"`, 
+      {
+        requiredInputsCount: requiredFields.length,
+        validatedInputs: validatedInputs,
+        allRequiredFilled: allFilled
+      }
+    );
+    
+    const continueButton = document.getElementById(buttonId);
+    if (!continueButton) return;
+    
+    continueButton.classList.toggle('inutil', !allFilled);
+    continueButton.disabled = !allFilled;
+    
+    // ⭐ Lógica para la clase 'has-new' y el scroll
+    if (allFilled) {
+      if (!continueButton.classList.contains('has-new')) {
+        continueButton.classList.add('has-new');
+        scrollToButton(continueButton);
+      }
+    } else {
+      continueButton.classList.remove('has-new');
+    }
+  }
+
+  // --- Resetear botones ---
+  function resetContinueButtons(form) {
+    const scope = form || document;
+    const buttons = scope.querySelectorAll('[continue-target]');
+    buttons.forEach(button => {
+      button.classList.add('inutil');
+      button.disabled = true;
+      // ⭐ Al resetear, también quitar la clase 'has-new'
+      button.classList.remove('has-new');
+    });
+  }
+  
+  // --- Configuración inicial de listeners para inputs de texto, etc. ---
+  document.addEventListener('DOMContentLoaded', () => {
+    // Listener para inputs tradicionales
+    const inputsToValidate = document.querySelectorAll(`input[cf-json-path][continue-trigger]:not([type="hidden"]), textarea[cf-json-path][continue-trigger]`);
+    
+    inputsToValidate.forEach(input => {
+      input.addEventListener('change', (e) => {
+        const continueButtonId = e.target.getAttribute('continue-trigger');
+        if (continueButtonId) {
+          document.dispatchEvent(new CustomEvent('valid-input-change', {
+            detail: { continueButtonId: continueButtonId }
+          }));
+        }
+      });
+    });
+
+    // 🚀 NUEVO: Listener para validación directa por clic 🚀
+    const directValidationElements = document.querySelectorAll('[direct-validation]');
+    directValidationElements.forEach(el => {
+      el.addEventListener('click', (e) => {
+        const continueButtonId = e.currentTarget.getAttribute('direct-validation');
+        if (continueButtonId) {
+          document.dispatchEvent(new CustomEvent('new-direct-validation', {
+            detail: { continueButtonId: continueButtonId }
+          }));
+        }
+      });
+    });
+    
+    // Emitir evento de finalización de configuración
+    document.dispatchEvent(new Event('input-change-ready'));
+  });
+
+  // --- Escuchar eventos de validación ---
+  document.addEventListener('valid-change-checkbox', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+  });
+
+  document.addEventListener('valid-change-radio', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+  });
+  
+  document.addEventListener('valid-change-hidden', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+  });
+
+  document.addEventListener('valid-input-change', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+  });
+
+  document.addEventListener('new-direct-validation', e => {
+    if (!e.detail || !e.detail.continueButtonId) return;
+    setTimeout(() => validateContinueButton(e.detail.continueButtonId), VALIDATION_DELAY);
+  });
+
+  document.addEventListener('reset-continue-buttons', e => {
+    resetContinueButtons(e.detail);
+  });
+})();
+</script>
+
+<!-- reset -->
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Utils ---------- */
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
+
+  function getInitialHiddenValue(inputType) {
+    return inputType === 'checkbox' ? '[]' : '{}';
+  }
+
+  /* ---------- Clean deep components ---------- */
+  function cleanChildComponents(container) {
+    if (!container || !(container instanceof Element)) return;
+
+    // 1. Limpieza de elementos del Color Picker
+    container.querySelectorAll('a[color-element-template]').forEach(el => {
+      console.debug('Reset: Simulating click on color picker element:', el);
+      el.click();
+    });
+    const selectColorBtn = container.querySelector('[internal-input-select-color]');
+    if (selectColorBtn) {
+      selectColorBtn.style.borderColor = '';
+      selectColorBtn.style.color = '';
+      selectColorBtn.classList.remove('previewed');
+    }
+
+    // 2. Limpieza de elementos de Uploader de Uploadcare
+    container.querySelectorAll('uc-file-item .uc-remove-btn').forEach(button => {
+      console.debug('Reset: Simulating click on Uploadcare remove button:', button);
+      button.click();
+    });
+
+    // 3. Limpieza de campos contenteditable
+    container.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      console.debug('Reset: Cleaning contenteditable element:', el);
+      el.innerHTML = '';
+    });
+
+    // 4. Limpieza de inputs nativos y hidden
+    container.querySelectorAll('input, textarea, select').forEach(i => {
+      try {
+        if (i instanceof HTMLInputElement && (i.type === 'checkbox' || i.type === 'radio')) {
+          i.checked = false;
+        } else {
+          i.value = '';
+        }
+        if (i.selectedIndex !== undefined) try { i.selectedIndex = -1; } catch (e) {}
+      } catch (e) {}
+    });
+
+    container.querySelectorAll('[component-id] input[type="hidden"][cf-json-path]').forEach(h => {
+      try {
+        const inputType = h.closest('[component-id]').getAttribute('input-type');
+        h.value = getInitialHiddenValue(inputType);
+      } catch (e) {}
+    });
+    
+    // 5. Limpieza general de clases de selección
+    const buttonComponents = container.querySelectorAll('[component-id][input-type="checkbox"], [component-id][input-type="radio"]');
+    buttonComponents.forEach(comp => {
+      const fieldClass = comp.getAttribute('f-class'); 
+      const labelClass = comp.getAttribute('l-class');
+      
+      if (fieldClass) { 
+        comp.querySelectorAll(`.${fieldClass}`).forEach(el => el.classList.remove(fieldClass));
+      }
+      if (labelClass) {
+        comp.querySelectorAll(`.${labelClass}`).forEach(el => el.classList.remove(labelClass));
+      }
+    });
+  }
+
+  /* ---------- Reset whole form and dependencies ---------- */
+  function resetForm(formEl) {
+    document.dispatchEvent(new CustomEvent('cf-loader-on'));
+    
+    // Limpieza completa de todos los campos y componentes dentro del formulario
+    cleanChildComponents(formEl);
+
+    // ⭐ NUEVO: Resetear el estado `active` en todos los componentes
+    const allActiveElements = formEl.querySelectorAll('[active="true"]');
+    allActiveElements.forEach(el => {
+      el.setAttribute('active', 'false');
+    });
+
+    // Oculta todos los elementos con display-depend
+    formEl.querySelectorAll('[display-depend]').forEach(node => {
+      node.style.display = 'none';
+    });
+
+    // Elimina data-required de todos los inputs, excepto los marcados con always-required
+    const allInputs = formEl.querySelectorAll('input, textarea, select');
+    allInputs.forEach(h => {
+      // ⭐ MODIFICACIÓN CLAVE: usar hasAttribute() en lugar de getAttribute()
+      const alwaysReq = h.hasAttribute('always-required');
+      if (!alwaysReq) {
+        h.removeAttribute('data-required');
+      }
+    });
+
+    // Reinicia el estado de los componentes
+    const componentsToReset = formEl.querySelectorAll('[component-id]');
+    componentsToReset.forEach(compEl => {
+      const inputType = compEl.getAttribute('input-type') || 'checkbox';
+      const jsonPath = compEl.getAttribute('json-path') || '';
+      const hiddenInput = compEl.querySelector(`input[cf-json-path="${jsonPath}"]`) || compEl.querySelector('input[type="hidden"][cf-json-path]');
+      
+      const detail = {
+        componentId: compEl.getAttribute('component-id'),
+        jsonPath: hiddenInput ? hiddenInput.getAttribute('cf-json-path') : null,
+        type: inputType,
+        value: null,
+        label: '',
+        id: null,
+        isChecked: false,
+        currentValue: null
+      };
+
+      document.dispatchEvent(new CustomEvent('option-change', { detail }));
+      if (inputType === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail }));
+      else if (inputType === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail }));
+    });
+
+    setTimeout(() => {
+      document.dispatchEvent(new CustomEvent('cf-loader-off'));
+    }, 120);
+  }
+
+  /* ---------- Instalar listeners ---------- */
+  function install() {
+    const reloadEls = document.querySelectorAll('[cf-reload-form]');
+    reloadEls.forEach(el => {
+      el.addEventListener('click', function (evt) {
+        try { evt.preventDefault(); } catch (e) {}
+        const form = el.closest('[cf-form-submit]') || null;
+        document.dispatchEvent(new CustomEvent('reset-continue-buttons', { detail: form }));
+        if (form) {
+          resetForm(form);
+        }
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install);
+  } else {
+    install();
+  }
+})();
+</script>

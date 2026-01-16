@@ -1,0 +1,411 @@
+<!--overview.main-image-->
+<!--descriptionMAIN-->
+<!--continue-trigger="continue-5"-->
+<!--/new_draft?crop=false&form=new-kit-->
+<!--/new_draft?crop=true&form=new-kit-->
+
+<uc-config
+  ctx-name="overview.main-image"
+  pubkey="a4083f9a6c359a1aa43b"
+  locale-name="es"
+  multiple="false"
+  group-output="false"
+  confirm-upload="false"
+  source-list="local, gdrive, gphotos, dropbox, onedrive"
+  img-only="true"
+  use-cloud-image-editor="true"
+  cloud-image-editor-tabs="crop"
+  crop-preset="4:5"
+></uc-config>
+
+<!-- ✅ Uploadcare File Uploader -->
+<uc-file-uploader-minimal ctx-name="overview.main-image">
+  <uc-form-input ctx-name="overview.main-image"></uc-form-input>
+</uc-file-uploader-minimal>
+
+<!-- ✅ Hidden Input vinculado -->
+<input
+  type="hidden"
+  name="overview.main-image"
+  cf-json-path="overview.main-image"
+  continue-trigger="continue-5"
+  data-required=""
+  always-required=""
+/>
+
+<!-- ✅ Uploadcare Context Listener -->
+<uc-upload-ctx-provider ctx-name="overview.main-image"></uc-upload-ctx-provider>
+
+<!-- ====== Processor (scoped / parameterized) ====== -->
+<script>
+(function () {
+    'use strict';
+
+    // ---------- PARAMS (Asegúrate que estos coincidan con tu config/validator) ----------
+    const CTX_NAME = 'overview.main-image'; // Asumimos este ctx-name para el ejemplo
+    const VALIDATOR_NAME = 'descriptionMAIN';
+    const storageKey = 'uploadcare';
+    const pathKey = CTX_NAME; 
+    const processingSet = new Set();
+    const XANO_ENDPOINT = '/new_draft?crop=false&form=new-kit'; // Endpoint estándar para 'new draft'
+    const XANO_ENDPOINT_CROP = '/new_draft?crop=true&form=new-kit'; // Nuevo endpoint/parametro para 'crop/update'
+
+    // ---------- Utils (Mantenemos los de tu código nuevo) ----------
+    function safeParseJSON(str, fallback = null) {
+        try { return JSON.parse(str); } catch (e) { return fallback; }
+    }
+    function readStore() { return safeParseJSON(localStorage.getItem(storageKey), {}) || {}; }
+    function writeStore(store) { localStorage.setItem(storageKey, JSON.stringify(store || {})); }
+    function safeString(v) { return v === undefined || v === null ? '' : String(v); }
+
+    function getIdentity(detail) {
+        if (!detail) return null;
+        if (typeof detail === 'object') {
+            if (detail.uuid) return detail.uuid;
+            if (detail.id) return detail.id;
+            if (detail.file && (detail.file.uuid || detail.file.id)) return detail.file.uuid || detail.file.id;
+        }
+        const asString = typeof detail === 'string' ? detail : (detail && (detail.cdnUrl || detail.cdnURL || detail.url || JSON.stringify(detail)));
+        if (!asString) return null;
+        const m = String(asString).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        return m ? m[1] : null;
+    }
+
+    function getFileUrl(detail) {
+        if (!detail) return null;
+        if (typeof detail === 'string') return detail;
+        if (typeof detail === 'object') {
+            return detail.cdnUrl || detail.cdnURL || detail.originalUrl || detail.url || detail.fileUrl || detail.previewUrl || null;
+        }
+        return null;
+    }
+
+    // Funciones visuales y de hidden input (Mantenemos las de tu código nuevo)
+    function locateGalleryRoot(ctxProvider) {
+        return (ctxProvider && (ctxProvider.closest('[uploader]') || ctxProvider.closest('.gallery') || ctxProvider.closest('form'))) || document;
+    }
+
+    function updateUploadButtonVisualByArray(ctxProvider, arr) {
+        try {
+            const hasFiles = Array.isArray(arr) && arr.length > 0;
+            const root = locateGalleryRoot(ctxProvider);
+            let host = root.querySelector(`uc-file-uploader-minimal[ctx-name="${CTX_NAME}"]`);
+            if (!host && ctxProvider) host = ctxProvider.closest('uc-file-uploader-minimal');
+            if (host && host.classList) host.classList.toggle('uploaded', hasFiles);
+            const uploadBtn = root.querySelector('a[upload-button], .upload-button, button.upload-button');
+            if (uploadBtn && uploadBtn.classList) uploadBtn.classList.toggle('uploaded', hasFiles);
+        } catch (err) { console.debug(`${VALIDATOR_NAME}: updateUploadButtonVisualByArray error`, err); }
+    }
+
+    function updateHiddenFromStore(ctxProvider, storeObj) {
+        const root = locateGalleryRoot(ctxProvider);
+        if (!root) return;
+        const hidden = root.querySelector('input[type="hidden"][name="' + pathKey + '"]');
+        if (!hidden) return;
+        const arr = (Array.isArray(storeObj[pathKey]) ? storeObj[pathKey] : []);
+        const processed = arr.filter(it => it && it.__synced === true).map(it => {
+            const copy = Object.assign({}, it);
+            delete copy.__synced;
+            return copy;
+        });
+        hidden.value = JSON.stringify(processed);
+        const continueId = hidden.getAttribute('continue-trigger');
+        if (continueId) {
+            document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail: { continueButtonId: continueId } }));
+        }
+        updateUploadButtonVisualByArray(ctxProvider, processed);
+        console.info(`${VALIDATOR_NAME}: hidden updated (${processed.length} items) for ${CTX_NAME}`);
+    }
+
+    // NORMALIZACION: similar a tu función, pero priorizando la cdnUrl/url del detalle
+    function normalizeEntry(detail) {
+        if (!detail || typeof detail !== 'object') return null;
+        const uuid = getIdentity(detail);
+        if (!uuid) return null;
+        const cdnURL = getFileUrl(detail);
+        let format = 'unknown';
+        try { format = detail.fileInfo?.imageInfo?.format || detail.fileInfo?.format || detail.mimeType || format; } catch (e) {}
+        return { uuid, cdnURL, format };
+    }
+
+    /**
+     * Llama a Xano para el procesamiento del draft.
+     * @param {Object} entry - El objeto a sincronizar (contiene uuid, cdnUrl, format).
+     * @param {boolean} isCropUpdate - Indica si debe usarse el endpoint de 'crop/update'.
+     * @param {Object} ctxProvider - El provider del contexto.
+     */
+    async function processDraft(entry, isCropUpdate, ctxProvider) {
+        const uuid = entry.uuid;
+        if (processingSet.has(uuid)) return;
+        processingSet.add(uuid);
+
+        try {
+            const authToken = localStorage.getItem('AuthToken');
+            if (!authToken) throw new Error("Missing AuthToken for draft processing.");
+            if (typeof xano === 'undefined' || !xano || typeof xano.post !== 'function') throw new Error("Xano not available for draft processing.");
+            xano.setAuthToken(authToken);
+
+            const endpoint = isCropUpdate ? XANO_ENDPOINT_CROP : XANO_ENDPOINT;
+            const payload = {
+                cdnUrl: entry.cdnURL,
+                uuid: uuid,
+                format: entry.format
+            };
+
+            console.debug(`${VALIDATOR_NAME}: sending ${endpoint} for uuid=${uuid} (isCrop=${isCropUpdate})`);
+            const res = await xano.post(endpoint, payload);
+
+            const body = (res && typeof res === 'object' && res.body && typeof res.body === 'object') ? res.body : (res && typeof res === 'object' ? res : null);
+            const toStore = (body && typeof body === 'object') ? Object.assign({}, body) : (res && typeof res === 'object' ? Object.assign({}, res) : { uuid, cdnURL: entry.cdnURL || '' });
+            toStore.__synced = true;
+
+            // Update store
+            const storeAfter = readStore();
+            if (!Array.isArray(storeAfter[pathKey])) storeAfter[pathKey] = [];
+            const idx = storeAfter[pathKey].findIndex(it => getIdentity(it) === uuid);
+            if (idx >= 0) {
+                storeAfter[pathKey][idx] = Object.assign(storeAfter[pathKey][idx], toStore);
+            } else {
+                storeAfter[pathKey].push(toStore);
+            }
+            writeStore(storeAfter);
+
+            updateHiddenFromStore(ctxProvider, storeAfter);
+            console.info(`${VALIDATOR_NAME}: draft processed successfully for uuid=${uuid} (ctx=${CTX_NAME})`);
+
+            document.dispatchEvent(new CustomEvent('draft-success', { detail: { uuid, response: res } }));
+        } catch (err) {
+            console.error(`${VALIDATOR_NAME}: error processing draft for uuid=${uuid}`, err);
+            document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { uuid, error: err } }));
+        } finally {
+            processingSet.delete(uuid);
+        }
+    }
+
+    // Inicializa listeners en el provider dado
+    function initForProvider(ctxProvider) {
+        if (!ctxProvider) return;
+        console.info(`${VALIDATOR_NAME}: initForProvider -> ${CTX_NAME}`);
+
+        // MODIFICACIÓN CLAVE: Manejar file-url-changed para detectar ediciones/crop
+        ctxProvider.addEventListener('file-url-changed', (ev) => {
+            const detail = ev?.detail || ev?.detail?.fileEntry || ev?.detail?.file || ev;
+            const normalized = normalizeEntry(detail);
+            if (!normalized) {
+                console.warn(`${VALIDATOR_NAME}: file-url-changed without valid uuid`, detail);
+                return;
+            }
+
+            const store = readStore();
+            if (!Array.isArray(store[pathKey])) store[pathKey] = [];
+            const idx = store[pathKey].findIndex(it => getIdentity(it) === normalized.uuid);
+            const isAlreadySynced = idx >= 0 && store[pathKey][idx].__synced === true;
+
+            // 1. Es una edición (crop) si ya está sincronizado y la URL ha cambiado o es un evento de edición
+            if (isAlreadySynced) {
+                const currentUrl = getFileUrl(store[pathKey][idx]);
+                const newUrl = normalized.cdnURL;
+                
+                // Si la URL es significativamente diferente (o tiene parámetros de edición), procesamos como CROP/UPDATE
+                if (currentUrl !== newUrl) {
+                    // Actualizar el store localmente con la nueva URL (para consistency)
+                    store[pathKey][idx] = Object.assign(store[pathKey][idx], normalized);
+                    store[pathKey][idx].cdnURL = newUrl; // Sobreescribir con la URL más reciente
+                    writeStore(store);
+
+                    // Re-procesar el draft con la nueva URL y el flag de CROP
+                    processDraft(store[pathKey][idx], true, ctxProvider);
+                    console.debug(`${VALIDATOR_NAME}: detected CROP/UPDATE for uuid=${normalized.uuid}`);
+                    return; 
+                }
+            } 
+            
+            // 2. Comportamiento original (solo guardar como pending si es un archivo nuevo o no sincronizado)
+            if (idx >= 0) {
+                // Actualizar info mínima si no está sincronizado
+                if (!store[pathKey][idx].__synced) {
+                    store[pathKey][idx] = Object.assign(store[pathKey][idx], normalized);
+                }
+            } else {
+                store[pathKey].push(Object.assign({}, normalized));
+            }
+            writeStore(store);
+            updateUploadButtonVisualByArray(ctxProvider, (store[pathKey]||[]).filter(it => it && it.__synced === true));
+            console.debug(`${VALIDATOR_NAME}: file-url-changed saved pending/initial uuid=${normalized.uuid}`);
+        });
+
+        // file-removed: (Mantenemos el original)
+        ctxProvider.addEventListener('file-removed', (ev) => {
+            const detail = ev?.detail || ev;
+            const uuid = getIdentity(detail);
+            if (!uuid) return;
+            const store = readStore();
+            if (!Array.isArray(store[pathKey])) return;
+            const idx = store[pathKey].findIndex(it => getIdentity(it) === uuid);
+            if (idx >= 0) {
+                document.dispatchEvent(new CustomEvent('delete-draft', { detail: { uuid } }));
+                store[pathKey].splice(idx, 1);
+                if (store[pathKey].length === 0) delete store[pathKey];
+                writeStore(store);
+                updateHiddenFromStore(ctxProvider, store);
+                console.debug(`${VALIDATOR_NAME}: file-removed uuid=${uuid} for ${CTX_NAME}`);
+            }
+        });
+    }
+
+    // Processor: escucha new-draft; (Mantenemos el original, llamará a Xano sin ?crop)
+    function initNewDraftProcessor(ctxProvider) {
+        document.addEventListener('new-draft', async (ev) => {
+            const fileEntry = ev?.detail?.fileEntry || ev?.detail;
+            const eventCtxName = ev?.detail?.ctxName || null;
+            if (!fileEntry) return;
+            const uuid = getIdentity(fileEntry);
+            if (!uuid) return;
+
+            if (eventCtxName && eventCtxName !== CTX_NAME) return;
+            
+            const currentStore = readStore();
+            const isCachedHere = Array.isArray(currentStore[pathKey]) && currentStore[pathKey].some(it => getIdentity(it) === uuid);
+            if (!eventCtxName && !isCachedHere) return;
+            
+            // Si ya está sincronizado, ignorar el new-draft (para evitar doble llamada si ya fue procesado)
+            if (isCachedHere && currentStore[pathKey].find(it => getIdentity(it) === uuid && it.__synced === true)) {
+                // Si el new-draft llega después de que Xano ya respondió (caso raro, pero posible)
+                console.debug(`${VALIDATOR_NAME}: skipping new-draft, already synced: uuid=${uuid}`);
+                return;
+            }
+
+            const store = readStore();
+            const cachedIdx = store[pathKey].findIndex(it => getIdentity(it) === uuid);
+            const cached = cachedIdx >= 0 ? store[pathKey][cachedIdx] : null;
+
+            const payload = normalizeEntry(Object.assign({}, cached || {}, fileEntry)); // Fusionar info de cache y fileEntry
+            
+            // Usar la función de procesamiento con flag isCropUpdate=false
+            await processDraft(payload, false, ctxProvider);
+        });
+    }
+
+    // Bootstrapping: (Mantenemos el original)
+    function boot() {
+        const ctxSelector = 'uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]';
+        const ctxProvider = document.querySelector(ctxSelector);
+        if (ctxProvider) {
+            initForProvider(ctxProvider);
+            initNewDraftProcessor(ctxProvider);
+            // Sincronización inicial de hidden input (si ya tiene valores)
+            try {
+                const root = locateGalleryRoot(ctxProvider);
+                const hidden = root.querySelector('input[type="hidden"][name="' + pathKey + '"]');
+                const initial = hidden ? safeParseJSON(hidden.value, []) : [];
+                if (Array.isArray(initial) && initial.length > 0) {
+                    const store = readStore();
+                    store[pathKey] = initial.map(it => Object.assign({}, it, { __synced: true }));
+                    writeStore(store);
+                    updateUploadButtonVisualByArray(ctxProvider, store[pathKey].filter(it => it && it.__synced === true));
+                } else {
+                    updateUploadButtonVisualByArray(ctxProvider, []);
+                }
+            } catch (e) { /* silent */ }
+            return;
+        }
+
+        const mo = new MutationObserver((mutations, obs) => {
+            const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]');
+            if (p) {
+                obs.disconnect();
+                initForProvider(p);
+                initNewDraftProcessor(p);
+            }
+        });
+        mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+
+        // fallback
+        setTimeout(() => {
+            const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]');
+            if (p) {
+                try { initForProvider(p); initNewDraftProcessor(p); } catch (e) { console.warn(e); }
+            } else {
+                console.warn(`${VALIDATOR_NAME}: uc-upload-ctx-provider not found for ${CTX_NAME}`);
+            }
+        }, 10000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+
+})();
+</script>
+
+<!-- ====== Validator (scoped & emits ctxName) ====== -->
+<script>
+(() => {
+  // Parametrizable: si renombras, mantén el mismo VALIDATOR_NAME usado arriba
+  const CTX_NAME = 'overview.main-image';
+  const VALIDATOR_NAME = 'descriptionMAIN';
+
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch {
+      return undefined;
+    }
+  }
+
+  const seenDrafts = new Set();
+
+  const validator = (fileEntry) => {
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+    const DENIED_TYPES = ['image/svg+xml', 'image/gif'];
+
+    const ONLY_ALLOWED     = getCache('dynamic', 'only_allowed') || 'Solo se permiten:';
+    const MAX_SIZE_TEXT    = getCache('dynamic', 'max_size') || 'Tamaño máximo:';
+    const YOUR_FILE_TEXT   = getCache('dynamic', 'your_file') || 'Tu archivo tiene';
+
+    if (!fileEntry) return { message: 'Archivo inválido', code: 'INVALID' };
+
+    // Tipo
+    if (!fileEntry.mimeType || DENIED_TYPES.includes(fileEntry.mimeType) || !ALLOWED_TYPES.includes(fileEntry.mimeType)) {
+      return { message: `${ONLY_ALLOWED} JPG, PNG, WEBP o AVIF`, code: "INVALID_TYPE" };
+    }
+
+    // Tamaño individual
+    if (fileEntry.size > MAX_SIZE_BYTES) {
+      const actualSizeMB = (fileEntry.size / (1000 * 1000)).toFixed(2);
+      return { message: `${MAX_SIZE_TEXT} ${MAX_SIZE_MB} MB. ${YOUR_FILE_TEXT} ${actualSizeMB} MB.`, code: "SIZE_EXCEEDED" };
+    }
+
+    // Evento: emitimos new-draft e incluimos ctxName para mayor robustez
+    const uuid = fileEntry.uuid || fileEntry.id || (fileEntry.file && fileEntry.file.uuid);
+    if (uuid && !seenDrafts.has(uuid)) {
+      seenDrafts.add(uuid);
+      document.dispatchEvent(new CustomEvent("new-draft", {
+        detail: { ctxName: CTX_NAME, fileEntry }
+      }));
+      console.debug(`${VALIDATOR_NAME}: dispatched new-draft for uuid=${uuid} (ctx=${CTX_NAME})`);
+    }
+
+    return null; // validación ok
+  };
+
+  document.addEventListener('uploadcare-ready', () => {
+    customElements.whenDefined('uc-config').then(() => {
+      const config = document.querySelector('uc-config[ctx-name="' + CTX_NAME + '"]');
+      if (config) {
+        config.fileValidators = [validator];
+        console.info(`${VALIDATOR_NAME}: registered for ctx ${CTX_NAME}`);
+      } else {
+        console.warn(`${VALIDATOR_NAME}: uc-config not found for ${CTX_NAME}`);
+      }
+    }).catch(err => {
+      console.error(`${VALIDATOR_NAME}: error registering validator`, err);
+    });
+  });
+})();
+</script>

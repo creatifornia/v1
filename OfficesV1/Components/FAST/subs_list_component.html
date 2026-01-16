@@ -1,0 +1,302 @@
+<script>
+(function(){
+  'use strict';
+
+  // ---------- Config ----------
+  const TEMPLATE_ID = 'subs-list-template';
+  const CHUNK_SIZE = 8;           // ajustar según rendimiento
+  const CLICK_GAP = 120;
+  const REMOVE_ANIM_MS = 220;
+  const XANO_TIMEOUT = 1200000;     // ms timeout (si se usa en otras utilidades)
+
+  // ---------- Helpers ----------
+  function safeJSONParse(str, fallback = null) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  // base64 unicode-safe (útil para data-secure-key)
+  function base64EncodeUnicode(str) {
+    if (str == null) return '';
+    return btoa(unescape(encodeURIComponent(String(str))));
+  }
+  function base64DecodeUnicode(b64) {
+    if (!b64) return '';
+    return decodeURIComponent(escape(atob(b64)));
+  }
+
+  // non-blocking chunk processor (uses requestIdleCallback if available)
+  const ric = window.requestIdleCallback || function(fn){ return setTimeout(() => fn({ timeRemaining: () => 50 }), 1); };
+  function processInChunks(items, fnItem, opts = {}) {
+    const chunk = opts.chunk || CHUNK_SIZE;
+    let i = 0;
+    function work(deadline) {
+      const start = performance.now();
+      while (i < items.length && (deadline.timeRemaining() > 0 || (performance.now() - start) < 8)) {
+        fnItem(items[i], i);
+        i++;
+        if (i % chunk === 0) break;
+      }
+      if (i < items.length) ric(work);
+      else if (typeof opts.onDone === 'function') opts.onDone();
+    }
+    ric(work);
+  }
+
+  // fetch with timeout (compat)
+  function fetchWithTimeout(url, opts = {}, timeout = XANO_TIMEOUT) {
+    return Promise.race([
+      fetch(url, opts),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeout))
+    ]);
+  }
+
+  // ---------- Storage access ----------
+  function readSubscriptionsFromLocalStorage() {
+    const direct = safeJSONParse(localStorage.getItem('offices.suscriptions'), null);
+    if (Array.isArray(direct)) return direct.slice();
+    const offices = safeJSONParse(localStorage.getItem('offices'), null);
+    if (offices && Array.isArray(offices.suscriptions)) return offices.suscriptions.slice();
+    if (offices && Array.isArray(offices.subscriptions)) return offices.subscriptions.slice();
+    return [];
+  }
+
+  function writeSubscriptionsToLocalStorage(arr) {
+    const directKey = localStorage.getItem('offices.suscriptions') !== null;
+    if (directKey) {
+      localStorage.setItem('offices.suscriptions', JSON.stringify(arr));
+      return;
+    }
+    const officesRaw = safeJSONParse(localStorage.getItem('offices'), null) || {};
+    officesRaw.suscriptions = arr;
+    localStorage.setItem('offices', JSON.stringify(officesRaw));
+  }
+
+  // ---------- Secure-id storage ----------
+  const secureIdToElement = new Map(); // secureId -> element
+
+  function attachSecureKeyToElement(el, secureId) {
+    if (!el) return;
+    const encoded = base64EncodeUnicode(secureId);
+    el.dataset.secureKey = encoded;
+    secureIdToElement.set(String(secureId), el);
+  }
+  function getElementBySecureId(secureId) {
+    return secureIdToElement.get(String(secureId)) || document.querySelector(`[data-secure-key="${base64EncodeUnicode(secureId)}"]`);
+  }
+  function removeElementSecureReference(secureId) {
+    secureIdToElement.delete(String(secureId));
+    const sel = document.querySelector(`[data-secure-key="${base64EncodeUnicode(secureId)}"]`);
+    if (sel) sel.removeAttribute('data-secure-key');
+  }
+
+  // ---------- Build logic ----------
+  function buildSubsComponents() {
+    const subs = readSubscriptionsFromLocalStorage();
+    if (!Array.isArray(subs) || subs.length === 0) {
+      console.log('[subs-components] no subscriptions found -> dispatching subs-components-ready');
+      document.dispatchEvent(new Event('subs-components-ready'));
+      return;
+    }
+
+    const template = document.getElementById(TEMPLATE_ID);
+    if (!template) {
+      console.error('[subs-components] template not found:', TEMPLATE_ID);
+      console.log('[subs-components] dispatching subs-components-ready (template missing)');
+      document.dispatchEvent(new Event('subs-components-ready'));
+      return;
+    }
+
+    const toProcess = subs.map(s => Object.assign({}, s)); // shallow copy
+    const created = [];
+
+    processInChunks(toProcess, (item) => {
+      try {
+        if (!item || !item.active) return;
+
+        const planId = item.spaces_plan_id;
+        const targetContainer = document.querySelector(`[subs-list-plan-id="${planId}"]`);
+        if (!targetContainer) return;
+
+        // clone element (no removeIds; asumimos templates sin id problemático)
+        const clone = template.cloneNode(true);
+        let itemEl;
+        if (template.tagName && template.tagName.toLowerCase() === 'template') {
+          const contentClone = template.content.cloneNode(true);
+          const wrapper = document.createElement('div');
+          wrapper.appendChild(contentClone);
+          itemEl = wrapper.firstElementChild;
+        } else {
+          // simple clone
+          itemEl = clone;
+        }
+
+        const elSpaces = itemEl.querySelector('[sub-spaces]');
+        if (elSpaces) elSpaces.textContent = String(item.spaces ?? '');
+
+        const elPrice = itemEl.querySelector('[sub-price]');
+        if (elPrice) elPrice.textContent = String(item.display_price ?? '');
+
+        if (item.secure_id) {
+          attachSecureKeyToElement(itemEl, item.secure_id);
+        }
+
+        // append to container
+        targetContainer.appendChild(itemEl);
+        created.push(itemEl);
+
+        // wire delete button
+        const deleteBtn = itemEl.querySelector('[delete-sub]');
+        if (deleteBtn) {
+          deleteBtn.addEventListener('click', function(ev){
+            ev && ev.preventDefault && ev.preventDefault();
+            handleDeleteClick(itemEl, item);
+          });
+        }
+
+      } catch (err) {
+        console.error('[subs-components] build item error', err);
+      }
+    }, {
+      chunk: CHUNK_SIZE,
+      onDone() {
+        console.log('[subs-components] finished building -> dispatching subs-components-ready');
+        document.dispatchEvent(new Event('subs-components-ready'));
+      }
+    });
+  }
+
+  // ---------- Delete flow (USING XANO SDK now) ----------
+  async function handleDeleteClick(itemElement, itemData) {
+    // prevent double clicks: use a dataset flag
+    if (!itemElement) return;
+    if (itemElement.dataset.deleting === 'true') {
+      console.log('[subs-components] deletion already in progress for element', itemElement);
+      return;
+    }
+
+    const secureId = itemData && itemData.secure_id ? String(itemData.secure_id) : (itemElement && itemElement.dataset && base64DecodeUnicode(itemElement.dataset.secureKey || ''));
+    if (!secureId) {
+      console.warn('[subs-components] delete clicked but no secure id found.');
+      return;
+    }
+
+    const authToken = localStorage.getItem('AuthToken');
+    if (!authToken) {
+      console.warn('[subs-components] missing AuthToken');
+      return;
+    }
+
+    // mark as deleting immediately to block further clicks
+    itemElement.dataset.deleting = 'true';
+
+    // disable button(s) inside item while processing (completo)
+    const buttons = Array.from(itemElement.querySelectorAll('button, a, [delete-sub]'));
+    buttons.forEach(b => {
+      try {
+        if (b.tagName && b.tagName.toLowerCase() === 'button') b.disabled = true;
+      } catch(e){}
+      b.setAttribute('aria-disabled','true');
+      b.classList && b.classList.add('inutil');
+    });
+
+    // Use Xano SDK (simple response body expected: 'ok' or 'exceeded_usage' etc)
+    try {
+      if (typeof xano === 'undefined' || !xano || typeof xano.get !== 'function') {
+        throw new Error('Xano SDK not available (xano.get missing)');
+      }
+
+      try { xano.setAuthToken(authToken); } catch(e){ /* ignore */ }
+
+      const path = `/spaces/delete_validation?secure=${encodeURIComponent(secureId)}`;
+      console.log('[subs-components] calling xano.get ->', { path, hasAuthToken: !!authToken });
+      let response;
+      try {
+        response = await xano.get(path);
+        console.log('[subs-components] xano.get response raw ->', response);
+      } catch (xerr) {
+        console.error('[subs-components] xano.get threw an error ->', xerr);
+        // Xano error -> re-enable buttons and clear deleting flag so user can retry
+        buttons.forEach(b => {
+          try { if (b.tagName && b.tagName.toLowerCase() === 'button') b.disabled = false; } catch(e){}
+          b.removeAttribute('aria-disabled');
+          b.classList && b.classList.remove('inutil');
+        });
+        delete itemElement.dataset.deleting;
+        return;
+      }
+
+      // Normalized simple-body handling
+      const body = (response && response.body !== undefined && response.body !== null) ? String(response.body).trim() : '';
+      console.log('[subs-components] parsed body ->', body);
+
+if (body === 'exceeded_usage') {
+  const container = itemElement.closest('[subs-list-plan-id]') || itemElement.parentElement;
+  const detail = {};
+  if (container) {
+    if (container.hasAttribute('to-library')) detail['to-library'] = container.getAttribute('to-library');
+    if (container.hasAttribute('to-resumen')) detail['to-resumen'] = container.getAttribute('to-resumen');
+    if (container.hasAttribute('toLibrary')) detail['to-library'] = detail['to-library'] || container.getAttribute('toLibrary');
+    if (container.hasAttribute('toResumen')) detail['to-resumen'] = detail['to-resumen'] || container.getAttribute('toResumen');
+  }
+
+  // Añadimos el secure id (y el valor codificado usado en data-secure-key)
+  detail.secure = secureId;
+  try {
+    detail.dataSecureKey = itemElement.dataset && itemElement.dataset.secureKey ? itemElement.dataset.secureKey : base64EncodeUnicode(secureId);
+  } catch(e){
+    detail.dataSecureKey = base64EncodeUnicode(secureId);
+  }
+
+  console.log('[subs-components] dispatching exceeded_usage ->', detail);
+  document.dispatchEvent(new CustomEvent('exceeded_usage', { detail }));
+  // DO NOT re-enable buttons here; modal handler must decide later.
+  return;
+}
+
+
+      if (body === 'ok') {
+        console.log('[subs-components] received ok -> dispatching modal-confirm for secureId:', secureId);
+        // Do NOT remove UI / update localStorage here. modal-confirm will handle final deletion.
+        document.dispatchEvent(new CustomEvent('modal-confirm', { detail: { secure: secureId } }));
+        // DO NOT re-enable buttons: modal-confirm is responsible for final UI state and cleanup.
+        return;
+      }
+
+      // Unexpected body -> treat as error: re-enable so user can retry and log it
+      console.warn('[subs-components] unexpected response body from xano:', body);
+      buttons.forEach(b => {
+        try { if (b.tagName && b.tagName.toLowerCase() === 'button') b.disabled = false; } catch(e){}
+        b.removeAttribute('aria-disabled');
+        b.classList && b.classList.remove('inutil');
+      });
+      delete itemElement.dataset.deleting;
+      return;
+
+    } catch (err) {
+      console.error('[subs-components] delete validation error', err);
+      // re-enable on general unexpected errors
+      const buttons = Array.from(itemElement.querySelectorAll('button, a, [delete-sub]'));
+      buttons.forEach(b => {
+        try { if (b.tagName && b.tagName.toLowerCase() === 'button') b.disabled = false; } catch(e){}
+        b.removeAttribute('aria-disabled');
+        b.classList && b.classList.remove('inutil');
+      });
+      delete itemElement.dataset.deleting;
+    }
+  }
+
+  // ---------- Listen for initialization ----------
+  document.addEventListener('inputs-ready', function onReady() {
+    document.removeEventListener('inputs-ready', onReady);
+    setTimeout(buildSubsComponents, 8);
+  });
+
+  // Expose for debug
+  window.__subsComponents = {
+    build: buildSubsComponents,
+    getElementBySecureId,
+    attachSecureKeyToElement
+  };
+
+})();
+</script>

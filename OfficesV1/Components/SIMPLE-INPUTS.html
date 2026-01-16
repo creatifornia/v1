@@ -1,0 +1,50 @@
+
+
+<!-- type-number -->
+<style>
+/* 🔹 Quitar flechitas de number en Chrome, Safari, Edge */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 🔹 Quitar flechitas en Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}
+</style>
+
+<!-- type-number -->
+<script>
+(function(){
+  'use strict';
+
+  // Seleccionar todos los inputs type=number
+  const numberInputs = document.querySelectorAll('input[type="number"]');
+
+  numberInputs.forEach(input => {
+    // Bloquear caracteres no numéricos
+    input.addEventListener('keypress', (e) => {
+      const char = String.fromCharCode(e.which);
+      if (!/[0-9]/.test(char)) {
+        e.preventDefault();
+      }
+    });
+
+    // Extra seguridad: limpiar cualquier valor inválido pegado con Ctrl+V
+    input.addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/[^0-9]/g, '');
+    });
+  });
+})();
+</script>
+
+
+<!-- cf-required -->
+<script>
+document.querySelectorAll('input[cf-required="true"]').forEach(input => {
+    input.setAttribute('data-required', '');
+    input.setAttribute('always-required', '');
+});
+</script>

@@ -1,0 +1,388 @@
+
+<!--description.surface.gallery-->
+<!--cf-json-path="description.surface.gallery"-->
+<!--descriptionSurface-->
+<!--continue-trigger="continue-5"-->
+<!--/new_draft?form=new-kit-->
+
+<!-- ✅ Uploadcare Config -->
+<uc-config
+  ctx-name="description.surface.gallery"
+  pubkey="a4083f9a6c359a1aa43b"
+  locale-name="es"
+  multiple="true"
+  multiple-max="5"
+  group-output="false"
+  confirm-upload="false"
+  source-list="local, gdrive, gphotos, dropbox, onedrive"
+  img-only="true"
+  use-cloud-image-editor="false"
+></uc-config>
+
+<!-- ✅ Uploadcare File Uploader -->
+<uc-file-uploader-minimal ctx-name="description.surface.gallery">
+  <uc-form-input ctx-name="description.surface.gallery"></uc-form-input>
+</uc-file-uploader-minimal>
+
+<!-- ✅ Hidden Input -->
+<input
+  type="hidden"
+  name="description.surface.gallery"
+  cf-json-path="description.surface.gallery"
+  continue-trigger="continue-5"
+/>
+
+<!-- ✅ Uploadcare Context Listener -->
+<uc-upload-ctx-provider ctx-name="description.surface.gallery"></uc-upload-ctx-provider>
+
+<!-- ====== Processor (scoped / parameterized) ====== -->
+<script>
+(function () {
+  'use strict';
+
+  // ---------- PARAMS (cambia aquí para reusar en otro componente) ----------
+  const CTX_NAME = 'description.surface.gallery'; // ctx-name usado en uc-config / uc-upload-ctx-provider
+  const VALIDATOR_NAME = 'descriptionSurface';   // nombre para uso en console.logs (puedes renombrar)
+  const storageKey = 'uploadcare';
+  const pathKey = CTX_NAME; // usamos ctx-name como clave en store/hidden
+  const processingSet = new Set();
+
+  // ---------- Utils ----------
+  function safeParseJSON(str, fallback = null) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+  }
+  function readStore() { return safeParseJSON(localStorage.getItem(storageKey), {}) || {}; }
+  function writeStore(store) { localStorage.setItem(storageKey, JSON.stringify(store || {})); }
+  function safeString(v) { return v === undefined || v === null ? '' : String(v); }
+
+  function getIdentity(detail) {
+    if (!detail) return null;
+    if (typeof detail === 'object') {
+      if (detail.uuid) return detail.uuid;
+      if (detail.id) return detail.id;
+      if (detail.file && (detail.file.uuid || detail.file.id)) return detail.file.uuid || detail.file.id;
+    }
+    const asString = typeof detail === 'string' ? detail : (detail && (detail.cdnUrl || detail.cdnURL || detail.url || JSON.stringify(detail)));
+    if (!asString) return null;
+    const m = String(asString).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    return m ? m[1] : null;
+  }
+
+  // Encuentra el "gallery root" relativo al ctxProvider
+  function locateGalleryRoot(ctxProvider) {
+    return (ctxProvider && (ctxProvider.closest('[uploader]') || ctxProvider.closest('.gallery') || ctxProvider.closest('form'))) || document;
+  }
+
+  // Actualiza la clase 'uploaded' en elementos relevantes dentro del gallery root
+  function updateUploadButtonVisualByArray(ctxProvider, arr) {
+    try {
+      const hasFiles = Array.isArray(arr) && arr.length > 0;
+      const root = locateGalleryRoot(ctxProvider);
+      let host = root.querySelector(`uc-file-uploader-minimal[ctx-name="${CTX_NAME}"]`);
+      if (!host && ctxProvider) host = ctxProvider.closest('uc-file-uploader-minimal');
+      if (host && host.classList) host.classList.toggle('uploaded', hasFiles);
+      const uploadBtn = root.querySelector('a[upload-button], .upload-button, button.upload-button');
+      if (uploadBtn && uploadBtn.classList) uploadBtn.classList.toggle('uploaded', hasFiles);
+    } catch (err) { console.debug(`${VALIDATOR_NAME}: updateUploadButtonVisualByArray error`, err); }
+  }
+
+  // Normaliza entrada cruda a objeto pendiente { uuid, cdnURL, format }
+  function normalizePendingEntry(detail) {
+    if (!detail || typeof detail !== 'object') return null;
+    const uuid = getIdentity(detail);
+    if (!uuid) return null;
+    const cdnURL = safeString(detail.cdnURL || detail.cdnUrl || detail.originalUrl || detail.url || detail.previewUrl);
+    let format = 'unknown';
+    try { format = detail.fileInfo?.imageInfo?.format || detail.fileInfo?.format || detail.mimeType || format; } catch (e) {}
+    return { uuid, cdnURL, format };
+  }
+
+  // Actualiza el hidden con SOLO los objetos body (sin __synced)
+  function updateHiddenFromStore(ctxProvider, storeObj) {
+    const root = locateGalleryRoot(ctxProvider);
+    if (!root) return;
+    const hidden = root.querySelector('input[type="hidden"][name="' + pathKey + '"]');
+    if (!hidden) return;
+    const arr = (Array.isArray(storeObj[pathKey]) ? storeObj[pathKey] : []);
+    const processed = arr.filter(it => it && it.__synced === true).map(it => {
+      const copy = Object.assign({}, it);
+      delete copy.__synced;
+      return copy;
+    });
+    hidden.value = JSON.stringify(processed);
+    // trigger continue/valid-change-hidden si aplica
+    const continueId = hidden.getAttribute('continue-trigger');
+    if (continueId) {
+      document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail: { continueButtonId: continueId } }));
+    }
+    // actualizar visuales
+    updateUploadButtonVisualByArray(ctxProvider, processed);
+    console.info(`${VALIDATOR_NAME}: hidden updated (${processed.length} items) for ${CTX_NAME}`);
+  }
+
+  // Inicializa listeners en el provider dado
+  function initForProvider(ctxProvider) {
+    if (!ctxProvider) return;
+    console.info(`${VALIDATOR_NAME}: initForProvider -> ${CTX_NAME}`);
+
+    // file-url-changed: guardamos un pending minimal en store (no tocamos hidden)
+    ctxProvider.addEventListener('file-url-changed', (ev) => {
+      const detail = ev?.detail || ev?.detail?.fileEntry || ev?.detail?.file || ev;
+      const normalized = normalizePendingEntry(detail);
+      if (!normalized) {
+        console.warn(`${VALIDATOR_NAME}: file-url-changed sin uuid válido`, detail);
+        return;
+      }
+      const store = readStore();
+      if (!Array.isArray(store[pathKey])) store[pathKey] = [];
+      const idx = store[pathKey].findIndex(it => getIdentity(it) === normalized.uuid);
+      if (idx >= 0) {
+        if (store[pathKey][idx].__synced === true) {
+          store[pathKey][idx].cdnURL = store[pathKey][idx].cdnURL || normalized.cdnURL;
+          store[pathKey][idx].format = store[pathKey][idx].format || normalized.format;
+        } else {
+          store[pathKey][idx] = Object.assign({}, normalized);
+        }
+      } else {
+        store[pathKey].push(Object.assign({}, normalized));
+      }
+      writeStore(store);
+      // actualizar solo visual (con items ya sync'd)
+      updateUploadButtonVisualByArray(ctxProvider, (store[pathKey]||[]).filter(it => it && it.__synced === true));
+      console.debug(`${VALIDATOR_NAME}: file-url-changed saved pending uuid=${normalized.uuid} for ${CTX_NAME}`);
+    });
+
+    // file-removed: eliminar del store y emitir delete-draft con uuid
+    ctxProvider.addEventListener('file-removed', (ev) => {
+      const detail = ev?.detail || ev;
+      const uuid = getIdentity(detail);
+      if (!uuid) return;
+      const store = readStore();
+      if (!Array.isArray(store[pathKey])) return;
+      const idx = store[pathKey].findIndex(it => getIdentity(it) === uuid);
+      if (idx >= 0) {
+        document.dispatchEvent(new CustomEvent('delete-draft', { detail: { uuid } }));
+        store[pathKey].splice(idx, 1);
+        if (store[pathKey].length === 0) delete store[pathKey];
+        writeStore(store);
+        updateHiddenFromStore(ctxProvider, store);
+        console.debug(`${VALIDATOR_NAME}: file-removed uuid=${uuid} for ${CTX_NAME}`);
+      }
+    });
+  }
+
+  // Processor: escucha new-draft; procesa SOLO si el event.ctxName coincide OR si el uuid está cached para este ctx
+  function initNewDraftProcessor(ctxProvider) {
+    document.addEventListener('new-draft', async (ev) => {
+      const fileEntry = ev?.detail?.fileEntry || ev?.detail;
+      const eventCtxName = ev?.detail?.ctxName || null;
+      if (!fileEntry) return;
+      const uuid = getIdentity(fileEntry);
+      if (!uuid) return;
+
+      // Si el evento incluye ctxName y no coincide, ignorar
+      if (eventCtxName && eventCtxName !== CTX_NAME) {
+        // console.debug(`${VALIDATOR_NAME}: skipping new-draft for ${uuid} (event ctx ${eventCtxName} != ${CTX_NAME})`);
+        return;
+      }
+
+      // Si evento NO incluye ctxName, solo procesar si el uuid aparece en este ctx store (evita cross-processing)
+      const currentStore = readStore();
+      const hasCtxArray = Array.isArray(currentStore[pathKey]) && currentStore[pathKey].length > 0;
+      const isCachedHere = hasCtxArray && currentStore[pathKey].some(it => getIdentity(it) === uuid);
+      if (!eventCtxName && !isCachedHere) {
+        // no ctx specified and this ctx has no record -> ignore
+        // console.debug(`${VALIDATOR_NAME}: ignoring new-draft ${uuid} (no ctxName & not cached in ${CTX_NAME})`);
+        return;
+      }
+
+      if (processingSet.has(uuid)) return;
+      processingSet.add(uuid);
+
+      try {
+        const store = readStore();
+        if (!Array.isArray(store[pathKey])) store[pathKey] = [];
+        // find cached if present
+        const cachedIdx = store[pathKey].findIndex(it => getIdentity(it) === uuid);
+        const cached = cachedIdx >= 0 ? store[pathKey][cachedIdx] : null;
+
+        const payload = {
+          cdnUrl: (cached && cached.cdnURL) || fileEntry.cdnUrl || fileEntry.cdnURL || fileEntry.originalUrl || fileEntry.url || null,
+          uuid: uuid,
+          format: (cached && cached.format) || fileEntry.fileInfo?.imageInfo?.format || fileEntry.fileInfo?.format || fileEntry.mimeType || 'unknown'
+        };
+
+        const authToken = localStorage.getItem('AuthToken');
+        if (!authToken) {
+          console.error(`${VALIDATOR_NAME}: missing AuthToken for new_draft`);
+          document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, reason: 'NO_AUTH' } }));
+          processingSet.delete(uuid);
+          return;
+        }
+        if (typeof xano === 'undefined' || !xano || typeof xano.post !== 'function') {
+          console.error(`${VALIDATOR_NAME}: xano not available for new_draft`);
+          document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, reason: 'NO_XANO' } }));
+          processingSet.delete(uuid);
+          return;
+        }
+        xano.setAuthToken(authToken);
+
+        const res = await xano.post('/new_draft?form=new-kit', payload);
+
+        // Extract body if exists; fallback to res
+        const body = (res && typeof res === 'object' && res.body && typeof res.body === 'object') ? res.body : (res && typeof res === 'object' ? res : null);
+        if (!body || typeof body !== 'object') {
+          console.warn(`${VALIDATOR_NAME}: new_draft responded without a body; saving fallback`, res);
+        }
+
+        // Save the body object as-is (or res as fallback) and flag __synced
+        const toStore = (body && typeof body === 'object') ? Object.assign({}, body) : (res && typeof res === 'object' ? Object.assign({}, res) : { uuid, cdnURL: '' });
+        toStore.__synced = true;
+
+        const storeAfter = readStore();
+        if (!Array.isArray(storeAfter[pathKey])) storeAfter[pathKey] = [];
+        const idx = storeAfter[pathKey].findIndex(it => getIdentity(it) === getIdentity(toStore));
+        if (idx >= 0) {
+          storeAfter[pathKey][idx] = toStore;
+        } else {
+          storeAfter[pathKey].push(toStore);
+        }
+        writeStore(storeAfter);
+
+        updateHiddenFromStore(ctxProvider, storeAfter);
+        console.info(`${VALIDATOR_NAME}: new_draft processed for uuid=${uuid} (ctx=${CTX_NAME})`);
+
+        document.dispatchEvent(new CustomEvent('new-draft-success', { detail: { fileEntry, response: res } }));
+
+      } catch (err) {
+        console.error(`${VALIDATOR_NAME}: error processing new_draft for ctx=${CTX_NAME}`, err);
+        document.dispatchEvent(new CustomEvent('corrupted-upload', { detail: { fileEntry, error: err } }));
+      } finally {
+        processingSet.delete(uuid);
+      }
+    });
+  }
+
+  // Bootstrapping: busca provider (y lo observa si aparece tarde)
+  function boot() {
+    const ctxSelector = 'uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]';
+    const ctxProvider = document.querySelector(ctxSelector);
+    if (ctxProvider) {
+      initForProvider(ctxProvider);
+      initNewDraftProcessor(ctxProvider);
+      // inicializar visual desde hidden si ya hay valores previos
+      try {
+        const root = locateGalleryRoot(ctxProvider);
+        const hidden = root.querySelector('input[type="hidden"][name="' + pathKey + '"]');
+        const initial = hidden ? safeParseJSON(hidden.value, []) : [];
+        if (Array.isArray(initial) && initial.length > 0) {
+          const store = readStore();
+          store[pathKey] = initial.map(it => Object.assign({}, it, { __synced: true }));
+          writeStore(store);
+          updateUploadButtonVisualByArray(ctxProvider, store[pathKey].filter(it => it && it.__synced === true));
+        } else {
+          updateUploadButtonVisualByArray(ctxProvider, []);
+        }
+      } catch (e) { /* silent */ }
+      return;
+    }
+
+    const mo = new MutationObserver((mutations, obs) => {
+      const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]');
+      if (p) {
+        obs.disconnect();
+        initForProvider(p);
+        initNewDraftProcessor(p);
+      }
+    });
+    mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+
+    // fallback
+    setTimeout(() => {
+      const p = document.querySelector('uc-upload-ctx-provider[ctx-name="' + CTX_NAME + '"]');
+      if (p) {
+        try { initForProvider(p); initNewDraftProcessor(p); } catch (e) { console.warn(e); }
+      } else {
+        console.warn(`${VALIDATOR_NAME}: uc-upload-ctx-provider not found for ${CTX_NAME}`);
+      }
+    }, 10000);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+})();
+</script>
+
+<!-- ✅ Validation -->
+<script>
+(() => {
+  // Parametrizable: si renombras, mantén el mismo VALIDATOR_NAME usado arriba
+  const CTX_NAME = 'description.surface.gallery';
+  const VALIDATOR_NAME = 'descriptionSurface';
+
+  function getCache(key, path) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      return path.split('.').reduce((acc, part) => acc?.[part], data);
+    } catch {
+      return undefined;
+    }
+  }
+
+  const seenDrafts = new Set();
+
+  const validator = (fileEntry) => {
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+    const DENIED_TYPES = ['image/svg+xml', 'image/gif'];
+
+    const ONLY_ALLOWED     = getCache('dynamic', 'only_allowed') || 'Solo se permiten:';
+    const MAX_SIZE_TEXT    = getCache('dynamic', 'max_size') || 'Tamaño máximo:';
+    const YOUR_FILE_TEXT   = getCache('dynamic', 'your_file') || 'Tu archivo tiene';
+
+    if (!fileEntry) return { message: 'Archivo inválido', code: 'INVALID' };
+
+    // Tipo
+    if (!fileEntry.mimeType || DENIED_TYPES.includes(fileEntry.mimeType) || !ALLOWED_TYPES.includes(fileEntry.mimeType)) {
+      return { message: `${ONLY_ALLOWED} JPG, PNG, WEBP o AVIF`, code: "INVALID_TYPE" };
+    }
+
+    // Tamaño individual
+    if (fileEntry.size > MAX_SIZE_BYTES) {
+      const actualSizeMB = (fileEntry.size / (1000 * 1000)).toFixed(2);
+      return { message: `${MAX_SIZE_TEXT} ${MAX_SIZE_MB} MB. ${YOUR_FILE_TEXT} ${actualSizeMB} MB.`, code: "SIZE_EXCEEDED" };
+    }
+
+    // Evento: emitimos new-draft e incluimos ctxName para mayor robustez
+    const uuid = fileEntry.uuid || fileEntry.id || (fileEntry.file && fileEntry.file.uuid);
+    if (uuid && !seenDrafts.has(uuid)) {
+      seenDrafts.add(uuid);
+      document.dispatchEvent(new CustomEvent("new-draft", {
+        detail: { ctxName: CTX_NAME, fileEntry }
+      }));
+      console.debug(`${VALIDATOR_NAME}: dispatched new-draft for uuid=${uuid} (ctx=${CTX_NAME})`);
+    }
+
+    return null; // validación ok
+  };
+
+  document.addEventListener('uploadcare-ready', () => {
+    customElements.whenDefined('uc-config').then(() => {
+      const config = document.querySelector('uc-config[ctx-name="' + CTX_NAME + '"]');
+      if (config) {
+        config.fileValidators = [validator];
+        console.info(`${VALIDATOR_NAME}: registered for ctx ${CTX_NAME}`);
+      } else {
+        console.warn(`${VALIDATOR_NAME}: uc-config not found for ${CTX_NAME}`);
+      }
+    }).catch(err => {
+      console.error(`${VALIDATOR_NAME}: error registering validator`, err);
+    });
+  });
+})();
+</script>

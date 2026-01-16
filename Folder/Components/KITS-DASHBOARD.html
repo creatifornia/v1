@@ -1,0 +1,402 @@
+<script>
+(function () {
+  'use strict';
+
+  const TRANSFORMATION = "-/resize/50x50/";
+  const COPY_DELAY_MS = 5000;
+  const DEBUG = false;
+
+  const log = (...args) => { if (DEBUG) console.log('[KITSDASHBOARD]', ...args); };
+  const err = (...args) => { if (DEBUG) console.error('[KITSDASHBOARD]', ...args); };
+
+  const q = (root, sel) => (root || document).querySelector(sel);
+  const qa = (root, sel) => Array.from((root || document).querySelectorAll(sel));
+  const safeJSONParse = (raw, fallback = null) => {
+    try { return JSON.parse(raw); } catch (e) { return fallback; }
+  };
+
+  function collectKitsFromLocalStorage() {
+    const collected = [];
+    const direct = localStorage.getItem('offices.kits');
+    if (direct) {
+      const parsed = safeJSONParse(direct, null);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.kits)) return parsed.kits;
+    }
+
+    const candidatePairs = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === 'offices.kits' || key.indexOf('offices.kits.') === 0 || key.indexOf('offices.kits[') === 0) candidatePairs.push(key);
+      if (key === 'offices') {
+        const val = safeJSONParse(localStorage.getItem('offices'), null);
+        if (val && Array.isArray(val.kits)) return val.kits;
+      }
+    }
+
+    if (candidatePairs.length) {
+      candidatePairs.sort();
+      candidatePairs.forEach(k => {
+        const raw = localStorage.getItem(k);
+        const parsed = safeJSONParse(raw, null);
+        if (parsed && typeof parsed === 'object') {
+          if (!Array.isArray(parsed)) collected.push(parsed);
+          else parsed.forEach(it => collected.push(it));
+        }
+      });
+      if (collected.length) return collected;
+    }
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const raw = localStorage.getItem(key);
+      const parsed = safeJSONParse(raw, null);
+      if (Array.isArray(parsed) && parsed.length && parsed[0]?.id && parsed[0]?.title) return parsed;
+    }
+
+    return [];
+  }
+
+  function markInitialInutils(node) {
+    qa(node, '.inutil').forEach(el => el.dataset.wasInutil = 'true');
+  }
+  function removeInutils(node) {
+    qa(node, '[data-was-inutil="true"]').forEach(el => el.classList.remove('inutil'));
+  }
+  function restoreInutils(node) {
+    qa(node, '[data-was-inutil="true"]').forEach(el => el.classList.add('inutil'));
+  }
+
+  function findSubmitTarget(root) {
+    return q(root, '[submit-target]') || q(document, '[submit-target]');
+  }
+  function findCloseTarget(root) {
+    return q(root, '[close-target]') || q(document, '[close-target]');
+  }
+
+  function setRadioCheckedAndNotify(radio) {
+    if (!radio) return false;
+    try {
+      radio.checked = true;
+      radio.dispatchEvent(new Event('input', { bubbles: true }));
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    } catch (e) {
+      try {
+        const lbl = radio.closest('label') || document.querySelector(`label[for="${radio.id}"]`);
+        if (lbl) {
+          lbl.click();
+          radio.checked = true;
+          radio.dispatchEvent(new Event('input', { bubbles: true }));
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+      } catch (e2) {}
+    }
+    return false;
+  }
+
+  function replacePlaceholdersInClone(clone, id) {
+    qa(clone, '*').forEach(el => {
+      ['data-name','name','id','placeholder','cf-form-submit','cf-endpoint','cf-json-path','currency-component'].forEach(attr => {
+        if (!el.hasAttribute || !el.hasAttribute(attr)) return;
+        const val = el.getAttribute(attr);
+        if (!val) return;
+        let newVal = val.replace(/\{replace-with-id\}/g, String(id)).replace(/\{id\}/g, String(id));
+        if (attr === 'name' && (newVal === 'replace-with-id' || /replace-with-id/.test(val))) {
+          newVal = `kits-listing-group-${id}`;
+        }
+        el.setAttribute(attr, newVal);
+      });
+    });
+    qa(clone, '[name]').forEach(el => {
+      const n = el.getAttribute('name');
+      if (!n) return;
+      if (n === 'replace-with-id' || n.indexOf('{replace-with-id}') !== -1) el.setAttribute('name', `kits-listing-group-${id}`);
+    });
+  }
+
+  function createCloneForKit(template, kit) {
+    const id = kit.id;
+    if (!id) return;
+
+    if (q(template.parentElement, `[data-kits-listing-id="${id}"]`) || q(template.parentElement, `[data-kit-id="${id}"]`)) return;
+
+    const clone = template.cloneNode(true);
+    clone.setAttribute('data-kits-listing-id', String(id));
+    clone.dataset.kitId = String(id);
+
+    // === INICIO: Corrección de IDs de Webflow Tabs para clones ===
+    const tabsComponent = q(clone, '.w-tabs');
+    if (tabsComponent) {
+        // Generar un ID único basado en el kit ID
+        const uniqueTabId = `w-tabs-kit-${id}`; 
+        // Reemplazar IDs genéricos como "w-tabs-39" por el ID único
+        qa(tabsComponent, '*').forEach(el => {
+            const currentId = el.id || '';
+            const currentHref = el.href || '';
+            const currentAria = el.getAttribute('aria-controls') || '';
+
+            // Si encuentra un ID de Webflow genérico, lo reemplaza
+            if (currentId.startsWith('w-tabs-') && !currentId.startsWith(uniqueTabId)) {
+                el.id = currentId.replace(/w-tabs-\d+/, uniqueTabId);
+            }
+            if (currentHref.includes('#w-tabs-') && !currentHref.includes(uniqueTabId)) {
+                el.href = currentHref.replace(/w-tabs-\d+/, uniqueTabId);
+            }
+            if (currentAria.includes('w-tabs-') && !currentAria.includes(uniqueTabId)) {
+                el.setAttribute('aria-controls', currentAria.replace(/w-tabs-\d+/, uniqueTabId));
+            }
+        });
+        tabsComponent.id = uniqueTabId;
+        // Asegurar que el tab pane cerrado apunte al nuevo ID
+        const closedPane = q(clone, '[data-w-tab="closed"].w-tab-pane');
+        const closedAnchor = q(clone, '[data-w-tab="closed"]');
+        if (closedPane && closedAnchor) {
+            const newPaneId = `${uniqueTabId}-data-w-pane-closed`;
+            const newTabId = `${uniqueTabId}-data-w-tab-closed`;
+            closedPane.id = newPaneId;
+            closedAnchor.id = newTabId;
+            closedAnchor.href = `#${newPaneId}`;
+            closedAnchor.setAttribute('aria-controls', newPaneId);
+            closedPane.setAttribute('aria-labelledby', newTabId);
+        }
+    }
+    // === FIN: Corrección de IDs de Webflow Tabs ===
+
+
+    markInitialInutils(clone);
+    replacePlaceholdersInClone(clone, id);
+
+    const form = q(clone, 'form') || clone;
+    if (form) {
+      form.setAttribute('cf-form-submit', `kits-listing-form-${id}`);
+      form.setAttribute('cf-endpoint', `kits/update?id=${id}`);
+      if (!form.id) form.id = `wf-form-kits-listing-${id}`;
+    }
+
+    const imgEl = q(clone, '[insert-cdnurl]') || q(clone, 'img[insert-cdnurl]') || q(clone, 'img');
+    if (imgEl && kit.cdnURL) imgEl.src = String(kit.cdnURL).replace(/\/*$/, '/') + TRANSFORMATION;
+
+    const skuEl = q(clone, '[replace-with-id]');
+    if (skuEl) skuEl.textContent = String(id);
+
+    const titleInput = q(clone, '[insert-title-placeholder]') || q(clone, 'input[cf-json-path="title"]');
+    if (titleInput) titleInput.value = kit.title || '';
+
+    qa(clone, '[currency-component]').forEach(el => el.setAttribute('currency-component', `kits-listing-price-${id}`));
+    const priceInput = q(clone, '[insert-price-placeholder]');
+    if (priceInput) {
+      if (kit.price && typeof kit.price.raw_value !== 'undefined') priceInput.value = kit.price.raw_value;
+      else if (kit.price && typeof kit.price.display_value !== 'undefined') {
+        const s = String(kit.price.display_value).replace(/[^\d.,\-]/g, '').replace(',', '.');
+        priceInput.value = s || '';
+      }
+    }
+
+    const stockInput = q(clone, '[cf-json-path="stock"]') || q(clone, 'input.stock');
+    if (stockInput) stockInput.value = String(kit.stock ?? '');
+
+    const salesEl = q(clone, '[fill-with-sales]');
+    if (salesEl) salesEl.textContent = String((kit.stats && kit.stats.sales) || 0);
+
+    // append clone so Webflow sees it
+    template.parentElement.appendChild(clone);
+
+    // try to find radios locally
+    const radioEdit = clone.querySelector('input[target-edit]') || clone.querySelector('input[value="edit"]') || clone.querySelector('input[type="radio"][value="edit"]') || null;
+    const radioDelete = clone.querySelector('input[target-delete]') || clone.querySelector('input[value="delet"], input[value="delete"]') || null;
+
+    clone._radioEdit = radioEdit;
+    clone._radioDelete = radioDelete;
+
+    if (clone._radioEdit) {
+      clone._radioEdit.name = clone._radioEdit.name || `kits-listing-group-${id}`;
+      clone._radioEdit.dataset.name = clone._radioEdit.dataset.name || `kits-listing-group-${id}`;
+    }
+    if (clone._radioDelete) {
+      clone._radioDelete.name = clone._radioDelete.name || `kits-listing-group-${id}`;
+      clone._radioDelete.dataset.name = clone._radioDelete.dataset.name || `kits-listing-group-${id}`;
+    }
+
+    const openTrigger = q(clone, '[open-trigger]');
+    const copyTrigger = q(clone, '[copy-trigger]');
+    const triggerEditAnchor = q(clone, '[trigger-edit]') || q(clone, '[data-w-tab="edit"]');
+    const triggerDeleteAnchor = q(clone, '[trigger-delete]') || q(clone, '[data-w-tab="delete"]');
+
+    const editSubmit = q(clone, '[edit-submit-trigger]');
+    const editClose = q(clone, '[edit-close-trigger]');
+    const deleteSubmit = q(clone, '[delete-submit-trigger]');
+    const deleteClose = q(clone, '[delete-close-trigger]');
+
+    const closeTarget = findCloseTarget(clone);
+    const submitTarget = findSubmitTarget(clone);
+
+    if (openTrigger) {
+      openTrigger.addEventListener('click', function () {
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+        if (kit.url) window.open(String(kit.url), '_blank');
+      });
+    }
+
+    if (copyTrigger) {
+      copyTrigger.addEventListener('click', function () {
+        if (kit.url && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(String(kit.url)).catch(() => null);
+        }
+        setTimeout(() => { if (closeTarget) try { closeTarget.click(); } catch (e) {} }, COPY_DELAY_MS);
+      });
+    }
+
+    // === FIX: search for the radio inside the anchor first (most reliable) ===
+    if (triggerEditAnchor) {
+      triggerEditAnchor.addEventListener('click', function () {
+        removeInutils(clone);
+        setTimeout(() => {
+          let r = triggerEditAnchor.querySelector('input[target-edit], input[type="radio"][value="edit"], input[value="edit"]');
+          if (!r) r = clone._radioEdit || clone.querySelector('input[target-edit], input[type="radio"][value="edit"], input[value="edit"]');
+          if (r) {
+            const ok = setRadioCheckedAndNotify(r);
+            if (!ok) log('No se pudo marcar radioEdit para kit', id);
+          } else {
+            log('radioEdit no encontrado para kit', id);
+          }
+        }, 0);
+      });
+    }
+
+    if (editClose) {
+      editClose.addEventListener('click', function () {
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+        restoreInutils(clone);
+      });
+    }
+
+    if (editSubmit) {
+      editSubmit.addEventListener('click', function () {
+        if (submitTarget) try { submitTarget.click(); } catch (e) {}
+        restoreInutils(clone);
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+      });
+    }
+
+    if (triggerDeleteAnchor) {
+      triggerDeleteAnchor.addEventListener('click', function () {
+        setTimeout(() => {
+          let r = triggerDeleteAnchor.querySelector('input[target-delete], input[type="radio"][value="delet"], input[type="radio"][value="delete"], input[value="delet"], input[value="delete"]');
+          if (!r) r = clone._radioDelete || clone.querySelector('input[target-delete], input[type="radio"][value="delet"], input[type="radio"][value="delete"], input[value="delet"], input[value="delete"]');
+          if (r) setRadioCheckedAndNotify(r);
+          else log('radioDelete no encontrado para kit', id);
+        }, 0);
+      });
+    }
+
+    if (deleteSubmit) {
+      deleteSubmit.addEventListener('click', function () {
+        const r = clone._radioDelete || clone.querySelector('input[target-delete], input[type="radio"][value="delet"], input[type="radio"][value="delete"], input[value="delet"], input[value="delete"]');
+        if (r) setRadioCheckedAndNotify(r);
+        if (submitTarget) try { submitTarget.click(); } catch (e) {}
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+      });
+    }
+
+    if (deleteClose) {
+      deleteClose.addEventListener('click', function () {
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+      });
+    }
+
+    qa(clone, '[cancel-trigger]').forEach(cancelEl => {
+      cancelEl.addEventListener('click', function () {
+        if (closeTarget) try { closeTarget.click(); } catch (e) {}
+        restoreInutils(clone);
+      });
+    });
+
+    // safety pass attribute replacement
+    qa(clone, '*').forEach(el => {
+      ['data-name','name','id','placeholder','cf-form-submit','cf-endpoint','cf-json-path','currency-component'].forEach(attr => {
+        if (!el.hasAttribute(attr)) return;
+        const val = el.getAttribute(attr);
+        if (!val) return;
+        const newVal = val.replace(/\{replace-with-id\}/g, String(id)).replace(/\{id\}/g, String(id));
+        if (newVal !== val) el.setAttribute(attr, newVal);
+      });
+    });
+
+    log('Clone creado para kit', id, { hasEdit: !!clone._radioEdit, hasDelete: !!clone._radioDelete });
+    return clone;
+  }
+
+  function initKitsListing() {
+    try {
+      const kits = collectKitsFromLocalStorage();
+      const template = q(document, '[kits-template]');
+      if (!template) {
+        document.dispatchEvent(new CustomEvent('kits-listing-ready', { detail: { created: 0, reason: 'no-template' } }));
+        return;
+      }
+      if (!kits || !kits.length) {
+        document.dispatchEvent(new CustomEvent('kits-listing-ready', { detail: { created: 0, reason: 'no-kits' } }));
+        return;
+      }
+
+      let created = 0;
+      kits.forEach(k => {
+        try { createCloneForKit(template, k); created++; } catch (e) { err('Error creando clone:', e); }
+      });
+      
+      // === APLICAR EL FIX DE RE-INICIALIZACIÓN DE WEBFLOW ===
+      if (window.Webflow) {
+        if (typeof window.Webflow.ready === 'function') {
+            window.Webflow.ready();
+        } else if (typeof window.Webflow.require === 'function') {
+            const tabs = window.Webflow.require('tabs');
+            if (tabs) tabs.ready();
+            else window.Webflow.ready();
+        }
+        log('Webflow re-inicializado para reconocer nuevos clones. Esto debería activar los botones.');
+      }
+      // ======================================================
+      // dentro de initKitsListing, después del loop 'kits.forEach'
+     if (template && template.parentElement) {
+    template.remove(); // Elimina el elemento del template
+    }
+      
+      document.dispatchEvent(new CustomEvent('kits-listing-ready', { detail: { created } }));
+    } catch (e) {
+      err('Excepción en initKitsListing:', e);
+      document.dispatchEvent(new CustomEvent('kits-listing-ready', { detail: { created: 0, error: String(e) } }));
+    }
+  }
+
+  function waitAndInit() {
+    let ran = false;
+    const once = () => { if (ran) return; ran = true; initKitsListing(); };
+
+    // Opción 1: Evento de datos listo
+    document.addEventListener('data-ready', once, { once: true });
+    
+    // Opción 2: Fallback robusto para DOM/Carga completa. 
+    // Usaremos un único timeout corto para evitar ejecuciones múltiples.
+    const fallbackInit = () => {
+        if (!ran) {
+            log('Iniciando via fallback (DOMContentLoaded/Load).');
+            once(); 
+        }
+    };
+    
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(fallbackInit, 0); 
+    } else {
+        window.addEventListener('data-ready', () => setTimeout(fallbackInit, 100), { once: true });
+        document.addEventListener('data-ready', () => setTimeout(fallbackInit, 100), { once: true });
+    }
+  }
+
+  window.__svetlana_initKitsListing = initKitsListing;
+  waitAndInit();
+
+})();
+</script>

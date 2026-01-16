@@ -1,0 +1,258 @@
+<!-- 🐞 Uploadcare components -->
+<script>
+(function () {
+  'use strict';
+
+  // Config
+  const MAX_RETRIES = 12;
+  const RETRY_DELAY = 500;
+  const CLICK_DELAY = 10; // delay configurable antes de hacer click en uc-drop-area
+  const ACTIVITY_CLOSE_REMOVE_TIMEOUT = 10000; // ms: desconectar observer si no aparece en este tiempo
+
+  function findNearestWithin(root, selector) {
+    const candidates = Array.from(root.querySelectorAll(selector));
+    if (!candidates.length) return null;
+    return candidates[0];
+  }
+
+  function safeClick(el) {
+    if (!el) return false;
+    try { el.click(); return true; } catch (_) {
+      try { el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); } catch(e){}
+      try { el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true })); } catch(e){}
+      try { el.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true })); return true; } catch (e) {
+        return false;
+      }
+    }
+  }
+
+  // REMOVER el botón close dentro de uc-activity-header dentro de uc-upload-list[activity="upload-list"][mode="list"][active]
+  // de forma robusta: intento inmediato + MutationObserver (desconecta luego).
+  function removeActivityCloseButtonsRobust(uploaderEl) {
+    if (!uploaderEl) return;
+    const selector = 'uc-upload-list[activity="upload-list"][mode="list"][active] uc-activity-header > button.uc-mini-btn.uc-close-btn';
+
+    function tryRemove() {
+      const btns = Array.from(uploaderEl.querySelectorAll(selector));
+      if (!btns.length) return false;
+      btns.forEach(b => {
+        try { b.remove(); } catch (e) { b.style.display = 'none'; b.setAttribute('aria-hidden','true'); }
+      });
+      return true;
+    }
+
+    // intento inmediato
+    if (tryRemove()) return;
+
+    // si no está aún, observamos por si se inserta dinámicamente
+    const mo = new MutationObserver((mutations, obs) => {
+      if (tryRemove()) obs.disconnect();
+    });
+    mo.observe(uploaderEl, { childList: true, subtree: true });
+
+    // desconectar por seguridad tras un timeout
+    setTimeout(() => {
+      try { mo.disconnect(); } catch (e) {}
+    }, ACTIVITY_CLOSE_REMOVE_TIMEOUT);
+  }
+
+  async function processUploader(uploaderEl, idx) {
+    if (!uploaderEl || uploaderEl.__processed) return { success: false, reason: 'already' };
+    let attempt = 0;
+
+    // arrancar observer inmediato para eliminación robusta (no esperar a detecciones más abajo)
+    removeActivityCloseButtonsRobust(uploaderEl);
+
+    while (attempt <= MAX_RETRIES) {
+      attempt++;
+      try {
+        const uploadButton = uploaderEl.querySelector('[upload-button]');
+        const doneButton   = uploaderEl.querySelector('button.uc-done-btn.uc-primary-btn');
+        const toolbar = uploaderEl.querySelector('.uc-toolbar');
+
+        const uploaderTab = findNearestWithin(uploaderEl, '[uploader-tab]');
+        const buttonTab   = findNearestWithin(uploaderEl, '[button-tab]');
+        const dropArea    = findNearestWithin(uploaderEl, 'uc-drop-area[clickable], uc-drop-area[initflow], uc-drop-area');
+
+        const missing = [];
+        if (!uploadButton) missing.push('upload-button');
+        if (!uploaderTab)    missing.push('uploader-tab');
+        if (!dropArea)       missing.push('uc-drop-area');
+
+        if (missing.length) {
+          if (attempt <= MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY));
+            continue;
+          } else {
+            return { success: false, reason: 'missing', missing };
+          }
+        }
+
+        // 1) Eliminar botones dentro de .uc-toolbar: close mini-btn y cancel/secondary (Limpiar)
+        if (toolbar) {
+          try {
+            const closeBtns = Array.from(toolbar.querySelectorAll('button.uc-mini-btn.uc-close-btn'));
+            closeBtns.forEach(b => {
+              try { b.remove(); } catch (e) { b.style.display = 'none'; b.setAttribute('aria-hidden','true'); }
+            });
+            const cancelBtns = Array.from(toolbar.querySelectorAll('button.uc-cancel-btn.uc-secondary-btn'));
+            cancelBtns.forEach(b => {
+              try { b.remove(); } catch (e) { b.style.display = 'none'; b.setAttribute('aria-hidden','true'); }
+            });
+          } catch (e) {
+            // silent
+          }
+        }
+
+        // 2) upload-button handler: uploader-tab -> wait -> drop-area (CLICK_DELAY configurable)
+        const uploadHandler = (ev) => {
+          try { ev?.stopImmediatePropagation?.(); ev?.preventDefault?.(); } catch(e){}
+          try {
+            if (uploaderTab) safeClick(uploaderTab);
+            setTimeout(() => { safeClick(dropArea); }, CLICK_DELAY);
+          } catch (err) {
+            // silent
+          }
+        };
+        if (uploadButton && !uploadButton.__uploader_hooked) {
+          uploadButton.addEventListener('click', uploadHandler, { capture: true });
+          uploadButton.__uploader_hooked = true;
+        }
+
+        // 3) DONE button: anular comportamiento nativo y en su lugar hacer CLICK en [button-tab] (solo eso)
+        if (doneButton) {
+          if (!doneButton.__uploader_hijacked) {
+            doneButton.__uploader_hijacked = true;
+            doneButton.addEventListener('click', (ev) => {
+              try { ev.preventDefault?.(); ev.stopImmediatePropagation?.(); } catch(e){}
+              let targetButtonTab = findNearestWithin(uploaderEl, '[button-tab]');
+              if (!targetButtonTab) targetButtonTab = uploaderEl.querySelector('[button-tab]');
+              if (targetButtonTab) {
+                try { targetButtonTab.click(); } catch (err) {
+                  try {
+                    targetButtonTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    targetButtonTab.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                    targetButtonTab.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+                  } catch (err2) { /* silent */ }
+                }
+              }
+            }, { capture: true });
+          }
+        }
+
+        // 4) [close] attribute elements: al click solo hacer click en [button-tab] (sin más)
+        const closeAttrEls = Array.from(uploaderEl.querySelectorAll('[close]'));
+        closeAttrEls.forEach(cl => {
+          if (cl.__close_hooked) return;
+          cl.__close_hooked = true;
+          cl.addEventListener('click', (ev) => {
+            try { ev.preventDefault?.(); ev.stopImmediatePropagation?.(); } catch(e){}
+            let targetButtonTab = findNearestWithin(uploaderEl, '[button-tab]');
+            if (!targetButtonTab) targetButtonTab = uploaderEl.querySelector('[button-tab]');
+            if (targetButtonTab) {
+              try { targetButtonTab.click(); } catch (err) {
+                try {
+                  targetButtonTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                  targetButtonTab.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                  targetButtonTab.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+                } catch (err2) { /* silent */ }
+              }
+            }
+          }, { capture: true });
+        });
+
+        // 5) button-tab handler (conservar comportamiento para clicks del usuario)
+        const allButtonTabs = Array.from(uploaderEl.querySelectorAll('[button-tab]'));
+        allButtonTabs.forEach(bt => {
+          if (bt.__uploader_button_tab_hooked) return;
+          bt.addEventListener('click', (ev) => {
+            if (!ev.isTrusted) {
+              return;
+            }
+            try { ev.preventDefault?.(); ev.stopImmediatePropagation?.(); } catch(e){}
+            safeClick(dropArea);
+            setTimeout(() => { safeClick(uploaderTab); }, CLICK_DELAY);
+          }, { capture: true });
+          bt.__uploader_button_tab_hooked = true;
+        });
+
+        // 6) Nuevo: permitir native Cancel dentro de .uc-content, luego IMMEDIATAMENTE click en [button-tab]
+        try {
+          const contentCancelBtn = uploaderEl.querySelector('.uc-content button.uc-secondary-btn');
+          if (contentCancelBtn && !contentCancelBtn.__content_cancel_hooked) {
+            contentCancelBtn.__content_cancel_hooked = true;
+            contentCancelBtn.addEventListener('click', (ev) => {
+              const targetButtonTab = findNearestWithin(uploaderEl, '[button-tab]') || uploaderEl.querySelector('[button-tab]');
+              if (targetButtonTab) {
+                setTimeout(() => {
+                  try { targetButtonTab.click(); } catch (err) {
+                    try {
+                      targetButtonTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                      targetButtonTab.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                      targetButtonTab.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+                    } catch (err2) { /* silent */ }
+                  }
+                }, 0);
+              }
+            }, { capture: false });
+          }
+        } catch (e) {
+          // silent
+        }
+
+        // asegurar eliminación final si algo quedó (intento extra)
+        removeActivityCloseButtonsRobust(uploaderEl);
+
+        uploaderEl.__processed = true;
+        return { success: true };
+      } catch (err) {
+        if (attempt <= MAX_RETRIES) { await new Promise(r => setTimeout(r, RETRY_DELAY)); continue; }
+        return { success: false, reason: 'exception', error: String(err) };
+      }
+    }
+    return { success: false, reason: 'exhausted' };
+  }
+
+  function startProcessing() {
+    const uploaders = Array.from(document.querySelectorAll('div[uploader]'));
+    const total = uploaders.length;
+
+    // arrancar observer/removal en todos los uploaders detectados inmediatamente
+    uploaders.forEach((u) => removeActivityCloseButtonsRobust(u));
+
+    let processed = 0;
+    let failed = 0;
+    (async () => {
+      for (let i = 0; i < uploaders.length; i++) {
+        const res = await processUploader(uploaders[i], i + 1);
+        if (res.success) processed++; else failed++;
+      }
+      document.dispatchEvent(new CustomEvent('buttons-ready', { detail: { total, processed, failed } }));
+      console.log("🐞 Components");
+    })();
+  }
+
+  document.addEventListener('uploadcare-ready', () => {
+    if (customElements && customElements.whenDefined) {
+      customElements.whenDefined('uc-config').then(() => {
+        try {
+          startProcessing();
+        } catch (e) {
+          document.dispatchEvent(new CustomEvent('buttons-ready', { detail: { total: 0, processed: 0, failed: 0, error: String(e) } }));
+          console.log("🐞1 Components");
+        }
+      }).catch(() => {
+        try { startProcessing(); } catch (e) {
+          document.dispatchEvent(new CustomEvent('buttons-ready', { detail: { total: 0, processed: 0, failed: 0, error: String(e) } }));
+          console.log("🐞2 Components");
+        }
+      });
+    } else {
+      try { startProcessing(); } catch (e) {
+        document.dispatchEvent(new CustomEvent('buttons-ready', { detail: { total: 0, processed: 0, failed: 0, error: String(e) } }));
+        console.log("🐞3 Components");
+      }
+    }
+  });
+})();
+</script>

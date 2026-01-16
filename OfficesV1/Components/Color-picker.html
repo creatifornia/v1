@@ -1,0 +1,857 @@
+<style>
+/* ---------- Estilos del color picker (minimal, elegante) ---------- */
+.cp-popover-modern {
+  position: fixed !important;
+  z-index: 1000 !important;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #fbfbfb);
+  box-shadow: 0 12px 40px rgba(12, 20, 30, 0.18), inset 0 1px 0 rgba(255,255,255,0.6);
+  box-sizing: border-box;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  color: #111;
+  transition: opacity .12s ease, transform .08s ease;
+  user-select: none;
+}
+
+.cp-row { display:flex; gap:12px; align-items:flex-start; }
+.cp-sv {
+  width: 180px; height: 120px; border-radius:8px; position:relative; overflow:hidden;
+  border:1px solid rgba(16,24,32,0.06);
+}
+.cp-sv::before{ content:""; position:absolute; inset:0; background:linear-gradient(to right,#fff, rgba(255,255,255,0)); pointer-events:none; }
+.cp-sv::after{ content:""; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0)); pointer-events:none; }
+
+.cp-sv-handle {
+  position:absolute; width:14px; height:14px; border-radius:50%;
+  border:2px solid #fff; box-shadow:0 6px 18px rgba(3,10,18,0.22); transform:translate(-7px,-7px); pointer-events:none;
+}
+
+.cp-hue { width:16px; height:120px; border-radius:8px; background:linear-gradient(to top,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); position:relative; border:1px solid rgba(16,24,32,0.06); }
+.cp-handle-h { position:absolute; left:50%; transform:translate(-50%,-9px); width:24px; height:6px; border-radius:6px; background:#fff; box-shadow:0 3px 8px rgba(3,10,18,0.18); pointer-events:none; }
+
+.cp-controls { display:flex; flex-direction:column; gap:8px; min-width:120px; }
+.cp-preview { width:38px; height:38px; border-radius:8px; border:1px solid rgba(16,24,32,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+.cp-hex-input { width:100%; padding:8px; border-radius:8px; border:1px solid #e6e6e6; font-family:monospace; box-sizing:border-box; }
+
+.cp-actions { display:flex; gap:8px; justify-content:flex-end; }
+.cp-btn { padding:8px 10px; border-radius:8px; border:1px solid #e6e6e6; background:#fafafa; cursor:pointer; }
+.cp-btn.primary { background:#111; color:#fff; border-color:#111; }
+
+.cp-presets { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.cp-preset { width:26px; height:26px; border-radius:6px; border:1px solid rgba(16,24,32,0.06); cursor:pointer; box-shadow:0 4px 10px rgba(3,10,18,0.06); }
+
+@media (max-width:520px){
+  .cp-popover-modern { width:92vw; }
+  .cp-row { gap:8px; }
+  .cp-sv { width:140px; height:100px; }
+  .cp-hue { height:100px; }
+  .cp-controls { min-width:100px; }
+}
+
+/* small helper for selected button preview (optional) */
+.internal-input-select-color.previewed { outline: 2px solid rgba(0,0,0,0.06); box-shadow: 0 6px 14px rgba(2,8,20,0.06) inset; }
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Helpers ---------- */
+  function clamp(v,a=0,b=1){ return Math.min(b, Math.max(a, v)); }
+  function hsvToRgb(h,s,v){
+    h=(h%360+360)%360; s=clamp(s); v=clamp(v);
+    const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+    let r=0,g=0,b=0;
+    if (h<60){ r=c; g=x; b=0; } else if (h<120){ r=x; g=c; b=0; } else if (h<180){ r=0; g=c; b=x; }
+    else if (h<240){ r=0; g=x; b=c; } else if (h<300){ r=x; g=0; b=c; } else { r=c; g=0; b=x; }
+    return { r: Math.round((r+m)*255), g: Math.round((g+m)*255), b: Math.round((b+m)*255) };
+  }
+  function rgbToHex(r,g,b){ return '#' + [r,g,b].map(n=>n.toString(16).padStart(2,'0')).join(''); }
+  function hexToRgb(hex){ if(!hex) return null; hex=String(hex).replace('#','').trim(); if(hex.length===3) hex=hex.split('').map(c=>c+c).join(''); if(hex.length!==6) return null; return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) }; }
+  function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min; let h=0; if(d===0) h=0; else if(max===r) h=((g-b)/d)%6*60; else if(max===g) h=((b-r)/d+2)*60; else h=((r-g)/d+4)*60; if(h<0) h+=360; const s = max===0?0:d/max; const v=max; return {h,s,v}; }
+
+  function pointerPos(e, el){
+    const rect = el.getBoundingClientRect();
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+    const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+    return { x: clientX - rect.left, y: clientY - rect.top, w: rect.width, h: rect.height };
+  }
+
+  /* ---------- POP (singleton) ---------- */
+  let POP = null;
+  function createPop(){
+    if(POP) return POP;
+    const el = document.createElement('div');
+    el.className = 'cp-popover-modern';
+    el.style.display = 'none';
+    el.innerHTML = `
+      <div class="cp-row">
+        <div class="cp-sv" data-role="sv"></div>
+        <div class="cp-controls">
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="cp-preview" data-role="preview"></div>
+            <input class="cp-hex-input" data-role="hex" placeholder="#rrggbb" spellcheck="false" maxlength="7">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="cp-hue" data-role="hue"></div>
+            <div style="flex:1">
+              <div class="cp-presets" data-role="presets"></div>
+            </div>
+          </div>
+          <div class="cp-actions">
+            <button data-role="cancel" class="cp-btn">Cancel</button>
+            <button data-role="apply" class="cp-btn primary">Apply</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    POP = el;
+
+    // build SV internals & handle
+    const sv = POP.querySelector('[data-role="sv"]');
+    sv.innerHTML = `<div style="position:absolute;inset:0;background:linear-gradient(to right,#fff,rgba(255,255,255,0));"></div>
+                    <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.5),rgba(0,0,0,0));"></div>
+                    <div class="cp-sv-handle" data-role="sv-handle"></div>`;
+
+    // presets
+    const presets = ['#000000','#ffffff','#f44336','#ff9800','#ffc107','#4caf50','#2196f3','#3f51b5','#9c27b0','#795548'];
+    const presetsContainer = POP.querySelector('[data-role="presets"]');
+    presets.forEach(hx=>{
+      const p = document.createElement('div');
+      p.className='cp-preset';
+      p.style.background = hx;
+      p.dataset.hex = hx;
+      p.title = hx;
+      presetsContainer.appendChild(p);
+    });
+
+    // state
+    const state = { h:0, s:1, v:1, hex:'#000000', onSelect:null };
+
+    function updateUI(){
+      const rgb = hsvToRgb(state.h, state.s, state.v);
+      state.hex = rgbToHex(rgb.r,rgb.g,rgb.b);
+      // SV handle
+      const svEl = POP.querySelector('[data-role="sv"]');
+      const handle = POP.querySelector('[data-role="sv-handle"]');
+      const sX = Math.round(state.s * svEl.clientWidth);
+      const sY = Math.round((1 - state.v) * svEl.clientHeight);
+      handle.style.left = sX + 'px';
+      handle.style.top = sY + 'px';
+      // preview & hex
+      POP.querySelector('[data-role="preview"]').style.background = state.hex;
+      POP.querySelector('[data-role="hex"]').value = state.hex;
+      // set SV overlay tint using CSS background for hue effect (simple)
+      sv.style.background = `linear-gradient(to right, #fff, rgba(255,255,255,0)), linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0)), linear-gradient(0deg, ${state.hex}, ${state.hex})`;
+    }
+
+    function setHex(hx){
+      const rgb = hexToRgb(hx);
+      if(!rgb) return;
+      const hsv = rgbToHsv(rgb.r,rgb.g,rgb.b);
+      state.h = hsv.h; state.s = hsv.s; state.v = hsv.v; state.hex = hx;
+      updateUI();
+    }
+
+    // interactions: SV
+    let svDown=false;
+    function svStart(e){ svDown=true; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="sv"]')); state.s = clamp(p.x/p.w); state.v = clamp(1 - p.y/p.h); updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function svMove(e){ if(!svDown) return; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="sv"]')); state.s = clamp(p.x/p.w); state.v = clamp(1 - p.y/p.h); updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function svEnd(e){ svDown=false; if(state.onSelect) state.onSelect(state.hex, true); }
+    POP.querySelector('[data-role="sv"]').addEventListener('mousedown', svStart);
+    window.addEventListener('mousemove', svMove);
+    window.addEventListener('mouseup', svEnd);
+    POP.querySelector('[data-role="sv"]').addEventListener('touchstart', svStart, {passive:false});
+    window.addEventListener('touchmove', svMove, {passive:false});
+    window.addEventListener('touchend', svEnd);
+
+    // hue interactions
+    let hueDown=false;
+    function hueStart(e){ hueDown=true; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="hue"]')); state.h = clamp(1 - p.y/p.h) * 360; updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function hueMove(e){ if(!hueDown) return; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="hue"]')); state.h = clamp(1 - p.y/p.h) * 360; updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function hueEnd(e){ hueDown=false; if(state.onSelect) state.onSelect(state.hex, true); }
+    POP.querySelector('[data-role="hue"]').addEventListener('mousedown', hueStart);
+    window.addEventListener('mousemove', hueMove);
+    window.addEventListener('mouseup', hueEnd);
+    POP.querySelector('[data-role="hue"]').addEventListener('touchstart', hueStart, {passive:false});
+    window.addEventListener('touchmove', hueMove, {passive:false});
+    window.addEventListener('touchend', hueEnd);
+
+    // hex input
+    POP.querySelector('[data-role="hex"]').addEventListener('input', (ev)=>{
+      const v=(ev.target.value||'').trim();
+      if(/^#?[0-9a-fA-F]{3,6}$/.test(v)){
+        const hx = v.startsWith('#')? v : '#' + v;
+        setHex(hx);
+        if(state.onSelect) state.onSelect(state.hex);
+      }
+    });
+
+    // presets click
+    POP.querySelector('[data-role="presets"]').addEventListener('click', (ev)=>{
+      const t = ev.target;
+      if(t && t.dataset && t.dataset.hex){
+        setHex(t.dataset.hex);
+        if(state.onSelect) state.onSelect(state.hex, true);
+      }
+    });
+
+    // apply/cancel
+    POP.querySelector('[data-role="cancel"]').addEventListener('click', ()=>{ hide(); });
+    POP.querySelector('[data-role="apply"]').addEventListener('click', ()=>{
+      if(state.onSelect) state.onSelect(state.hex, true);
+      hide();
+    });
+
+    function show(opts){
+      // opts: { anchorEl, color, onSelect }
+      const anchor = opts.anchorEl;
+      state.onSelect = opts.onSelect || null;
+      if(opts.color) setHex(opts.color); else { state.h=0; state.s=1; state.v=1; updateUI(); }
+
+      POP.style.display = 'block';
+      POP.style.opacity = '0';
+      POP.style.transform = 'translateY(4px)';
+      requestAnimationFrame(()=>{
+        // positioning: prefer visible anchor; if anchor off-screen place near center-top
+        const popRect = POP.getBoundingClientRect();
+        let left = 12, top = 12;
+        if(anchor && anchor.getBoundingClientRect){
+          const a = anchor.getBoundingClientRect();
+          const visible = !(a.bottom < 0 || a.top > window.innerHeight || a.right < 0 || a.left > window.innerWidth);
+          if(visible){
+            left = Math.min(Math.max(8, a.left), window.innerWidth - popRect.width - 8);
+            top  = a.bottom + 8;
+            if(top + popRect.height > window.innerHeight - 8){
+              const alt = a.top - popRect.height - 8;
+              top = (alt > 8) ? alt : Math.max(8, (window.innerHeight - popRect.height)/2);
+            }
+          } else {
+            left = Math.max(8, Math.min(window.innerWidth - popRect.width - 8, (window.innerWidth - popRect.width) / 2));
+            top = Math.max(40, (window.innerHeight * 0.2));
+          }
+        } else {
+          left = Math.max(8, Math.min(window.innerWidth - popRect.width - 8, (window.innerWidth - popRect.width) / 2));
+          top = Math.max(40, (window.innerHeight * 0.2));
+        }
+        POP.style.left = left + 'px';
+        POP.style.top = top + 'px';
+        POP.style.opacity = '1';
+        POP.style.transform = 'translateY(0)';
+      });
+    }
+    function hide(){ POP.style.display='none'; POP.style.opacity='0'; POP.style.transform='translateY(4px)'; state.onSelect=null; }
+
+    // outside click hides
+    document.addEventListener('mousedown', (e)=>{ if(POP && !POP.contains(e.target)) hide(); });
+    document.addEventListener('touchstart', (e)=>{ if(POP && !POP.contains(e.target)) hide(); }, {passive:true});
+
+    return { show, hide, setHex, POP };
+  } // end createPop
+
+  /* ---------- Main colors-component behavior (re-using your structure) ---------- */
+  const comps = Array.from(document.querySelectorAll('[colors-component]'));
+  function uid(prefix='c'){ return prefix + '_' + Date.now().toString(36) + '_' + Math.floor(Math.random()*10000).toString(36); }
+
+  comps.forEach(comp=>{
+    try{
+      const nameInput = comp.querySelector('.name-input input[type="text"], .name-input input');
+      const selectColorBtn = comp.querySelector('[internal-input-select-color]');
+      const addBtn = comp.querySelector('[internal-input-submit-color]');
+      const listContainer = comp.querySelector('[color-list]');
+      let template = comp.querySelector('[color-element-template]');
+      const continueAttr = comp.getAttribute('continue') || '';
+      const jsonPath = (comp.getAttribute('json-path')||'').trim();
+
+      if(!listContainer){ console.warn('colors-component missing list container'); return; }
+
+      if(!template){
+        template = document.createElement('a');
+        template.setAttribute('color-element-template','');
+        template.className = 'link-block-16 w-inline-block';
+        template.href = '#';
+        template.innerHTML = '<div border-and-text-editable class="button"><div>Color</div></div>';
+      }
+      const tplClone = template.cloneNode(true);
+      template.remove();
+
+      const hiddenName = jsonPath || uid('colors');
+      let hidden = comp.querySelector(`input[type="hidden"][cf-json-path="${hiddenName}"]`);
+      if(!hidden){
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.setAttribute('cf-json-path', hiddenName);
+        hidden.name = hiddenName;
+        hidden.value = '[]';
+        if(continueAttr) hidden.setAttribute('continue-trigger', continueAttr);
+        comp.appendChild(hidden);
+      }
+
+      const store = [];
+
+      function writeHiddenAndNotify(){
+        try{ hidden.value = JSON.stringify(store); }catch(e){ hidden.value='[]'; }
+        const continueId = hidden.getAttribute('continue-trigger');
+        if(continueId){
+          console.log('colors-component: dispatching valid-change-hidden for', continueId);
+          document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail: { continueButtonId: continueId } }));
+        }
+      }
+
+      function renderList(){
+        listContainer.innerHTML = '';
+        store.forEach(item=>{
+          const node = tplClone.cloneNode(true);
+          node.href = '#';
+          node.dataset.colorId = item.id;
+          node.dataset.colorValue = item.color;
+
+          const btn = node.querySelector('[border-and-text-editable]') || node.querySelector('.button') || node;
+          if(btn){
+            const innerLabel = btn.querySelector('div') || btn;
+            try{ btn.style.borderColor = item.color; btn.style.color = item.color; }catch(e){}
+            if(innerLabel) innerLabel.textContent = item.name || item.color;
+          } else {
+            node.textContent = item.name || item.color;
+            node.style.color = item.color;
+          }
+
+          node.addEventListener('click', (ev)=>{
+            ev.preventDefault();
+            const idx = store.findIndex(s=>s.id===item.id);
+            if(idx>=0) store.splice(idx,1);
+            renderList();
+            writeHiddenAndNotify();
+          });
+
+          listContainer.appendChild(node);
+        });
+      }
+
+      // restore existing
+      try{
+        const parsed = JSON.parse(hidden.value || '[]');
+        if(Array.isArray(parsed)) parsed.forEach(p=>{
+          if(p && p.color) store.push({ id: p.id || uid('ci'), name: p.name || p.color, color: p.color });
+        });
+      }catch(e){}
+
+      renderList();
+
+      // popover instance
+      const pop = createPop();
+      let tmpSelectedColor = null;
+
+      // helper to set visual on select button
+      function reflectOnSelectBtn(hex){
+        try{
+          if(!selectColorBtn) return;
+          selectColorBtn.style.borderColor = hex;
+          selectColorBtn.style.color = hex;
+          selectColorBtn.classList.add('previewed');
+        }catch(e){}
+      }
+
+      // open picker
+      if(selectColorBtn){
+        selectColorBtn.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          // pick default: last store color or hidden last or black
+          const last = (store.length ? store[store.length-1].color : ( (hidden.value && JSON.parse(hidden.value||'[]').slice(-1)[0]?.color) || '#000000'));
+          const onSelect = (hex, commit) => {
+            tmpSelectedColor = hex;
+            reflectOnSelectBtn(hex);
+            if(commit){
+              // keep tmpSelectedColor until user clicks Add
+            }
+          };
+          pop.show({ anchorEl: selectColorBtn, color: last, onSelect });
+        });
+      }
+
+      if(addBtn){
+        addBtn.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          const name = (nameInput && String(nameInput.value || '').trim()) || '';
+          const color = tmpSelectedColor || (selectColorBtn && (selectColorBtn.style.borderColor || selectColorBtn.style.color)) || '#000000';
+          const id = uid('ci');
+          store.push({ id, name: name || color, color: color });
+          tmpSelectedColor = null;
+          if(nameInput) nameInput.value = '';
+          renderList();
+          writeHiddenAndNotify();
+        });
+      }
+
+      // done
+      renderList();
+
+    }catch(err){
+      console.error('colors-component init error', err);
+    }
+  });
+
+  // ready
+  document.dispatchEvent(new CustomEvent('color-pickers-ready'));
+})(); 
+</script>
+
+
+<!-- v2 -->
+
+<style>
+/* ---------- Estilos del color picker (minimal, elegante) ---------- */
+.cp-popover-modern {
+  position: fixed !important;
+  z-index: 1000 !important;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #fbfbfb);
+  box-shadow: 0 12px 40px rgba(12, 20, 30, 0.18), inset 0 1px 0 rgba(255,255,255,0.6);
+  box-sizing: border-box;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  color: #111;
+  transition: opacity .12s ease, transform .08s ease;
+  user-select: none;
+}
+
+.cp-row { display:flex; gap:12px; align-items:flex-start; }
+.cp-sv {
+  width: 180px; height: 120px; border-radius:8px; position:relative; overflow:hidden;
+  border:1px solid rgba(16,24,32,0.06);
+}
+.cp-sv::before{ content:""; position:absolute; inset:0; background:linear-gradient(to right,#fff, rgba(255,255,255,0)); pointer-events:none; }
+.cp-sv::after{ content:""; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0)); pointer-events:none; }
+
+.cp-sv-handle {
+  position:absolute; width:14px; height:14px; border-radius:50%;
+  border:2px solid #fff; box-shadow:0 6px 18px rgba(3,10,18,0.22); transform:translate(-7px,-7px); pointer-events:none;
+}
+
+.cp-hue { width:16px; height:120px; border-radius:8px; background:linear-gradient(to top,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); position:relative; border:1px solid rgba(16,24,32,0.06); }
+.cp-handle-h { position:absolute; left:50%; transform:translate(-50%,-9px); width:24px; height:6px; border-radius:6px; background:#fff; box-shadow:0 3px 8px rgba(3,10,18,0.18); pointer-events:none; }
+
+.cp-controls { display:flex; flex-direction:column; gap:8px; min-width:120px; }
+.cp-preview { width:38px; height:38px; border-radius:8px; border:1px solid rgba(16,24,32,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+.cp-hex-input { width:100%; padding:8px; border-radius:8px; border:1px solid #e6e6e6; font-family:monospace; box-sizing:border-box; }
+
+.cp-actions { display:flex; gap:8px; justify-content:flex-end; }
+.cp-btn { padding:8px 10px; border-radius:8px; border:1px solid #e6e6e6; background:#fafafa; cursor:pointer; }
+.cp-btn.primary { background:#111; color:#fff; border-color:#111; }
+
+.cp-presets { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.cp-preset { width:26px; height:26px; border-radius:6px; border:1px solid rgba(16,24,32,0.06); cursor:pointer; box-shadow:0 4px 10px rgba(3,10,18,0.06); }
+
+@media (max-width:520px){
+  .cp-popover-modern { width:92vw; }
+  .cp-row { gap:8px; }
+  .cp-sv { width:140px; height:100px; }
+  .cp-hue { height:100px; }
+  .cp-controls { min-width:100px; }
+}
+
+/* small helper for selected button preview (optional) */
+.internal-input-select-color.previewed { outline: 2px solid rgba(0,0,0,0.06); box-shadow: 0 6px 14px rgba(2,8,20,0.06) inset; }
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- Helpers ---------- */
+  function clamp(v,a=0,b=1){ return Math.min(b, Math.max(a, v)); }
+  function hsvToRgb(h,s,v){
+    h=(h%360+360)%360; s=clamp(s); v=clamp(v);
+    const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+    let r=0,g=0,b=0;
+    if (h<60){ r=c; g=x; b=0; } else if (h<120){ r=x; g=c; b=0; } else if (h<180){ r=0; g=c; b=x; }
+    else if (h<240){ r=0; g=x; b=c; } else if (h<300){ r=x; g=0; b=c; } else { r=c; g=0; b=x; }
+    return { r: Math.round((r+m)*255), g: Math.round((g+m)*255), b: Math.round((b+m)*255) };
+  }
+  function rgbToHex(r,g,b){ return '#' + [r,g,b].map(n=>n.toString(16).padStart(2,'0')).join(''); }
+  function hexToRgb(hex){ if(!hex) return null; hex=String(hex).replace('#','').trim(); if(hex.length===3) hex=hex.split('').map(c=>c+c).join(''); if(hex.length!==6) return null; return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) }; }
+  function rgbToHsv(r,g,b){ r/=255; g/=255; b/=255; const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min; let h=0; if(d===0) h=0; else if(max===r) h=((g-b)/d)%6*60; else if(max===g) h=((b-r)/d+2)*60; else h=((r-g)/d+4)*60; if(h<0) h+=360; const s = max===0?0:d/max; const v=max; return {h,s,v}; }
+
+  function pointerPos(e, el){
+    const rect = el.getBoundingClientRect();
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+    const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+    return { x: clientX - rect.left, y: clientY - rect.top, w: rect.width, h: rect.height };
+  }
+
+  /* ---------- POP (singleton) ---------- */
+  let POP = null;
+  function createPop(){
+    if(POP) return POP;
+    const el = document.createElement('div');
+    el.className = 'cp-popover-modern';
+    el.style.display = 'none';
+    el.innerHTML = `
+      <div class="cp-row">
+        <div class="cp-sv" data-role="sv"></div>
+        <div class="cp-controls">
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="cp-preview" data-role="preview"></div>
+            <input class="cp-hex-input" data-role="hex" placeholder="#rrggbb" spellcheck="false" maxlength="7">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="cp-hue" data-role="hue"></div>
+            <div style="flex:1">
+              <div class="cp-presets" data-role="presets"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    POP = el;
+
+    // build SV internals & handle
+    const sv = POP.querySelector('[data-role="sv"]');
+    sv.innerHTML = `<div style="position:absolute;inset:0;background:linear-gradient(to right,#fff,rgba(255,255,255,0));"></div>
+                    <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.5),rgba(0,0,0,0));"></div>
+                    <div class="cp-sv-handle" data-role="sv-handle"></div>`;
+
+    // presets
+    const presets = ['#000000','#ffffff','#f44336','#ff9800','#ffc107','#4caf50','#2196f3','#3f51b5','#9c27b0','#795548'];
+    const presetsContainer = POP.querySelector('[data-role="presets"]');
+    presets.forEach(hx=>{
+      const p = document.createElement('div');
+      p.className='cp-preset';
+      p.style.background = hx;
+      p.dataset.hex = hx;
+      p.title = hx;
+      presetsContainer.appendChild(p);
+    });
+
+    // state
+    const state = { h:0, s:1, v:1, hex:'#000000', onSelect:null };
+
+    function updateUI(){
+      const rgb = hsvToRgb(state.h, state.s, state.v);
+      state.hex = rgbToHex(rgb.r,rgb.g,rgb.b);
+      // SV handle
+      const svEl = POP.querySelector('[data-role="sv"]');
+      const handle = POP.querySelector('[data-role="sv-handle"]');
+      const sX = Math.round(state.s * svEl.clientWidth);
+      const sY = Math.round((1 - state.v) * svEl.clientHeight);
+      handle.style.left = sX + 'px';
+      handle.style.top = sY + 'px';
+      // preview & hex
+      POP.querySelector('[data-role="preview"]').style.background = state.hex;
+      POP.querySelector('[data-role="hex"]').value = state.hex;
+      // set SV overlay tint using CSS background for hue effect (simple)
+      sv.style.background = `linear-gradient(to right, #fff, rgba(255,255,255,0)), linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0)), linear-gradient(0deg, ${state.hex}, ${state.hex})`;
+    }
+
+    function setHex(hx){
+      const rgb = hexToRgb(hx);
+      if(!rgb) return;
+      const hsv = rgbToHsv(rgb.r,rgb.g,rgb.b);
+      state.h = hsv.h; state.s = hsv.s; state.v = hsv.v; state.hex = hx;
+      updateUI();
+    }
+
+    // interactions: SV
+    let svDown=false;
+    function svStart(e){ svDown=true; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="sv"]')); state.s = clamp(p.x/p.w); state.v = clamp(1 - p.y/p.h); updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function svMove(e){ if(!svDown) return; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="sv"]')); state.s = clamp(p.x/p.w); state.v = clamp(1 - p.y/p.h); updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function svEnd(e){ svDown=false; if(state.onSelect) state.onSelect(state.hex, true); }
+    POP.querySelector('[data-role="sv"]').addEventListener('mousedown', svStart);
+    window.addEventListener('mousemove', svMove);
+    window.addEventListener('mouseup', svEnd);
+    POP.querySelector('[data-role="sv"]').addEventListener('touchstart', svStart, {passive:false});
+    window.addEventListener('touchmove', svMove, {passive:false});
+    window.addEventListener('touchend', svEnd);
+
+    // hue interactions
+    let hueDown=false;
+    function hueStart(e){ hueDown=true; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="hue"]')); state.h = clamp(1 - p.y/p.h) * 360; updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function hueMove(e){ if(!hueDown) return; e.preventDefault(); const p = pointerPos(e, POP.querySelector('[data-role="hue"]')); state.h = clamp(1 - p.y/p.h) * 360; updateUI(); if(state.onSelect) state.onSelect(state.hex); }
+    function hueEnd(e){ hueDown=false; if(state.onSelect) state.onSelect(state.hex, true); }
+    POP.querySelector('[data-role="hue"]').addEventListener('mousedown', hueStart);
+    window.addEventListener('mousemove', hueMove);
+    window.addEventListener('mouseup', hueEnd);
+    POP.querySelector('[data-role="hue"]').addEventListener('touchstart', hueStart, {passive:false});
+    window.addEventListener('touchmove', hueMove, {passive:false});
+    window.addEventListener('touchend', hueEnd);
+
+    // hex input
+    POP.querySelector('[data-role="hex"]').addEventListener('input', (ev)=>{
+      const v=(ev.target.value||'').trim();
+      if(/^#?[0-9a-fA-F]{3,6}$/.test(v)){
+        const hx = v.startsWith('#')? v : '#' + v;
+        setHex(hx);
+        if(state.onSelect) state.onSelect(state.hex);
+      }
+    });
+
+    // presets click
+    POP.querySelector('[data-role="presets"]').addEventListener('click', (ev)=>{
+      const t = ev.target;
+      if(t && t.dataset && t.dataset.hex){
+        setHex(t.dataset.hex);
+        if(state.onSelect) state.onSelect(state.hex, true);
+      }
+    });
+
+    function show(opts){
+      // opts: { anchorEl, color, onSelect }
+      const anchor = opts.anchorEl;
+      state.onSelect = opts.onSelect || null;
+      if(opts.color) setHex(opts.color); else { state.h=0; state.s=1; state.v=1; updateUI(); }
+
+      POP.style.display = 'block';
+      POP.style.opacity = '0';
+      POP.style.transform = 'translateY(4px)';
+      requestAnimationFrame(()=>{
+        // positioning: prefer visible anchor; if anchor off-screen place near center-top
+        const popRect = POP.getBoundingClientRect();
+        let left = 12, top = 12;
+        if(anchor && anchor.getBoundingClientRect){
+          const a = anchor.getBoundingClientRect();
+          const visible = !(a.bottom < 0 || a.top > window.innerHeight || a.right < 0 || a.left > window.innerWidth);
+          if(visible){
+            left = Math.min(Math.max(8, a.left), window.innerWidth - popRect.width - 8);
+            top  = a.bottom + 8;
+            if(top + popRect.height > window.innerHeight - 8){
+              const alt = a.top - popRect.height - 8;
+              top = (alt > 8) ? alt : Math.max(8, (window.innerHeight - popRect.height)/2);
+            }
+          } else {
+            left = Math.max(8, Math.min(window.innerWidth - popRect.width - 8, (window.innerWidth - popRect.width) / 2));
+            top = Math.max(40, (window.innerHeight * 0.2));
+          }
+        } else {
+          left = Math.max(8, Math.min(window.innerWidth - popRect.width - 8, (window.innerWidth - popRect.width) / 2));
+          top = Math.max(40, (window.innerHeight * 0.2));
+        }
+        POP.style.left = left + 'px';
+        POP.style.top = top + 'px';
+        POP.style.opacity = '1';
+        POP.style.transform = 'translateY(0)';
+      });
+    }
+    function hide(){ POP.style.display='none'; POP.style.opacity='0'; POP.style.transform='translateY(4px)'; state.onSelect=null; }
+
+    // outside click hides
+    document.addEventListener('mousedown', (e)=>{ if(POP && !POP.contains(e.target)) hide(); });
+    document.addEventListener('touchstart', (e)=>{ if(POP && !POP.contains(e.target)) hide(); }, {passive:true});
+
+    return { show, hide, setHex, POP };
+  } // end createPop
+
+  /* ---------- Main colors-component behavior (re-using your structure) ---------- */
+  const comps = Array.from(document.querySelectorAll('[colors-component]'));
+  function uid(prefix='c'){ return prefix + '_' + Date.now().toString(36) + '_' + Math.floor(Math.random()*10000).toString(36); }
+
+  comps.forEach(comp=>{
+    try{
+      const nameInput = comp.querySelector('[internal-input-name]');
+      const selectColorBtn = comp.querySelector('[internal-input-select-color]');
+      const addBtn = comp.querySelector('[internal-input-submit-color]');
+      const listContainer = comp.querySelector('[color-list]');
+      let template = comp.querySelector('[color-element-template]');
+      const continueAttr = comp.getAttribute('continue') || '';
+      const jsonPath = (comp.getAttribute('json-path')||'').trim();
+
+      if(!listContainer){ console.warn('colors-component missing list container'); return; }
+
+      if(!template){
+        template = document.createElement('a');
+        template.setAttribute('color-element-template','');
+        template.className = 'link-block-16 w-inline-block';
+        template.href = '#';
+        template.innerHTML = '<div border-and-text-editable class="button"><div>Color</div></div>';
+      }
+      const tplClone = template.cloneNode(true);
+      template.remove();
+
+      const hiddenName = jsonPath || uid('colors');
+      let hidden = comp.querySelector(`input[type="hidden"][cf-json-path="${hiddenName}"]`);
+      if(!hidden){
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.setAttribute('cf-json-path', hiddenName);
+        hidden.name = hiddenName;
+        hidden.value = '[]';
+        if(continueAttr) hidden.setAttribute('continue-trigger', continueAttr);
+        comp.appendChild(hidden);
+      }
+
+      const store = [];
+
+      function writeHiddenAndNotify(){
+        try{ hidden.value = JSON.stringify(store); }catch(e){ hidden.value='[]'; }
+        const continueId = hidden.getAttribute('continue-trigger');
+        if(continueId){
+          console.log('colors-component: dispatching valid-change-hidden for', continueId);
+          document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail: { continueButtonId: continueId } }));
+        }
+      }
+
+      function renderList(){
+        listContainer.innerHTML = '';
+        store.forEach(item=>{
+          const node = tplClone.cloneNode(true);
+          node.href = '#';
+          node.dataset.colorId = item.id;
+          node.dataset.colorValue = item.color;
+
+          const btn = node.querySelector('[border-and-text-editable]') || node.querySelector('.button') || node;
+          if(btn){
+            const innerLabel = btn.querySelector('div') || btn;
+            try{ btn.style.borderColor = item.color; btn.style.color = item.color; }catch(e){}
+            if(innerLabel) innerLabel.textContent = item.name || item.color;
+          } else {
+            node.textContent = item.name || item.color;
+            node.style.color = item.color;
+          }
+
+          node.addEventListener('click', (ev)=>{
+            ev.preventDefault();
+            const idx = store.findIndex(s=>s.id===item.id);
+            if(idx>=0) store.splice(idx,1);
+            renderList();
+            writeHiddenAndNotify();
+          });
+
+          listContainer.appendChild(node);
+        });
+      }
+
+      // restore existing
+      try{
+        const parsed = JSON.parse(hidden.value || '[]');
+        if(Array.isArray(parsed)) parsed.forEach(p=>{
+          if(p && p.color) store.push({ id: p.id || uid('ci'), name: p.name || p.color, color: p.color });
+        });
+      }catch(e){}
+
+      renderList();
+
+      // popover instance
+      const pop = createPop();
+      let tmpSelectedColor = null;
+
+      // helper to set visual on select button
+      function reflectOnSelectBtn(hex){
+        try{
+          if(!selectColorBtn) return;
+          selectColorBtn.style.borderColor = hex;
+          selectColorBtn.style.color = hex;
+          selectColorBtn.classList.add('previewed');
+        }catch(e){}
+      }
+
+      // open picker
+      if(selectColorBtn){
+        selectColorBtn.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          // pick default: last store color or hidden last or black
+          const last = (store.length ? store[store.length-1].color : ( (hidden.value && JSON.parse(hidden.value||'[]').slice(-1)[0]?.color) || '#000000'));
+          const onSelect = (hex) => {
+            tmpSelectedColor = hex;
+            reflectOnSelectBtn(hex);
+          };
+          pop.show({ anchorEl: selectColorBtn, color: last, onSelect });
+        });
+      }
+
+      if(addBtn){
+        addBtn.addEventListener('click', (ev)=>{
+          ev.preventDefault();
+          const name = (nameInput && String(nameInput.value || '').trim()) || '';
+          const color = tmpSelectedColor || (selectColorBtn && (selectColorBtn.style.borderColor || selectColorBtn.style.color)) || '#000000';
+          const id = uid('ci');
+          store.push({ id, name: name || color, color: color });
+          tmpSelectedColor = null;
+          if(nameInput) nameInput.value = '';
+          if (selectColorBtn) {
+            selectColorBtn.style.borderColor = '';
+            selectColorBtn.style.color = '';
+            selectColorBtn.classList.remove('previewed');
+          }
+          renderList();
+          writeHiddenAndNotify();
+          pop.hide();
+        });
+      }
+
+      // done
+      renderList();
+
+    }catch(err){
+      console.error('colors-component init error', err);
+    }
+  });
+
+  // ready
+  document.dispatchEvent(new CustomEvent('color-pickers-ready'));
+})(); 
+</script>
+
+
+
+<style>
+/* ---------- Estilos del color picker (minimal, elegante) ---------- */
+.cp-popover-modern {
+  position: fixed !important;
+  z-index: 1000 !important;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #fbfbfb);
+  box-shadow: 0 12px 40px rgba(12, 20, 30, 0.18), inset 0 1px 0 rgba(255,255,255,0.6);
+  box-sizing: border-box;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  color: #111;
+  transition: opacity .12s ease, transform .08s ease;
+  user-select: none;
+}
+
+.cp-row { display:flex; gap:12px; align-items:flex-start; }
+.cp-sv {
+  width: 180px; height: 120px; border-radius:8px; position:relative; overflow:hidden;
+  border:1px solid rgba(16,24,32,0.06);
+}
+.cp-sv::before{ content:""; position:absolute; inset:0; background:linear-gradient(to right,#fff, rgba(255,255,255,0)); pointer-events:none; }
+.cp-sv::after{ content:""; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0)); pointer-events:none; }
+
+.cp-sv-handle {
+  position:absolute; width:14px; height:14px; border-radius:50%;
+  border:2px solid #fff; box-shadow:0 6px 18px rgba(3,10,18,0.22); transform:translate(-7px,-7px); pointer-events:none;
+}
+
+.cp-hue { width:16px; height:120px; border-radius:8px; background:linear-gradient(to top,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); position:relative; border:1px solid rgba(16,24,32,0.06); }
+.cp-handle-h { position:absolute; left:50%; transform:translate(-50%,-9px); width:24px; height:6px; border-radius:6px; background:#fff; box-shadow:0 3px 8px rgba(3,10,18,0.18); pointer-events:none; }
+
+.cp-controls { display:flex; flex-direction:column; gap:8px; min-width:120px; }
+.cp-preview { width:38px; height:38px; border-radius:8px; border:1px solid rgba(16,24,32,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+.cp-hex-input { width:100%; padding:8px; border-radius:8px; border:1px solid #e6e6e6; font-family:monospace; box-sizing:border-box; }
+
+.cp-actions { display:flex; gap:8px; justify-content:flex-end; }
+.cp-btn { padding:8px 10px; border-radius:8px; border:1px solid #e6e6e6; background:#fafafa; cursor:pointer; }
+.cp-btn.primary { background:#111; color:#fff; border-color:#111; }
+
+.cp-presets { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+.cp-preset { width:26px; height:26px; border-radius:6px; border:1px solid rgba(16,24,32,0.06); cursor:pointer; box-shadow:0 4px 10px rgba(3,10,18,0.06); }
+
+@media (max-width:520px){
+  .cp-popover-modern { width:92vw; }
+  .cp-row { gap:8px; }
+  .cp-sv { width:140px; height:100px; }
+  .cp-hue { height:100px; }
+  .cp-controls { min-width:100px; }
+}
+
+/* small helper for selected button preview (optional) */
+.internal-input-select-color.previewed { outline: 2px solid rgba(0,0,0,0.06); box-shadow: 0 6px 14px rgba(2,8,20,0.06) inset; }
+</style>

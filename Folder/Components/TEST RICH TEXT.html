@@ -1,0 +1,297 @@
+<style>
+/* Editable behavior: no expandir horizontalmente; mantener scroll horizontal.
+   Las pulsaciones Enter seguirán añadiendo líneas y el contenedor crecerá verticalmente. */
+[text-area-editable],
+.text-area[text-area-editable] {
+  white-space: pre;               /* preserve line breaks, no wrapping */
+  overflow-x: auto;              /* horizontal scroll when line long */
+  overflow-y: auto;              /* vertical scroll if many lines */
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: normal;
+  word-wrap: normal;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Opcional: evitar que los <div> contenteditable muestren outline al focusear */
+[text-area-editable]:focus {
+  outline: none;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const selectionMap = new WeakMap();
+
+  /* ---------- Utils ---------- */
+  function saveSelection(editable) {
+    try {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0).cloneRange();
+      if (!editable.contains(range.commonAncestorContainer)) return;
+      selectionMap.set(editable, range);
+    } catch (err) {}
+  }
+
+  function restoreSelection(editable) {
+    try {
+      const range = selectionMap.get(editable);
+      const sel = window.getSelection();
+      if (range && sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return true;
+      }
+    } catch (err) {}
+    // fallback: caret at end
+    try {
+      const r = document.createRange();
+      r.selectNodeContents(editable);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    } catch (err) {}
+    return false;
+  }
+
+  function sanitizeContent(html) {
+    if (html === null || html === undefined) return "";
+    let s = String(html).replace(/\u00A0/g, ' ').trim();
+    const stripped = s
+      .replace(/^(?:\s|&nbsp;|<br\s*\/?>|\u00A0)+$/i, "")
+      .replace(/^<div>(?:\s|&nbsp;|<br\s*\/?>|\u00A0)*<\/div>$/i, "")
+      .trim();
+    const cleaned = stripped
+      .replace(/^(<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>)$/i, "")
+      .replace(/^(<div>(?:\s|&nbsp;|<br\s*\/?>)*<\/div>)$/i, "");
+    return String(cleaned === null ? "" : cleaned);
+  }
+
+  function applyCommand(editable, cmd) {
+    restoreSelection(editable);
+    try { document.execCommand(cmd, false, null); } catch (e) {}
+    try { editable.focus({ preventScroll: true }); } catch (_) { try { editable.focus(); } catch (__) {} }
+  }
+
+  function commandForElement(el) {
+    if (!el) return null;
+    if (el.hasAttribute("bold")) return "bold";
+    if (el.hasAttribute("italic")) return "italic";
+    if (el.hasAttribute("underline")) return "underline";
+    if (el.hasAttribute("ul") || el.getAttribute("field") === "ul") return "insertUnorderedList";
+    if (el.hasAttribute("ol") || el.getAttribute("field") === "ol") return "insertOrderedList";
+    return null;
+  }
+
+  // robust event dispatcher for continue
+  function dispatchValidChangeHidden(continueButtonId) {
+    if (!continueButtonId) return;
+    const detail = { continueButtonId };
+    const evt = new CustomEvent("valid-change-hidden", {
+      detail,
+      bubbles: true,
+      composed: true
+    });
+    // dispatch on document (listener listens there)
+    document.dispatchEvent(evt);
+    // also dispatch on window as redundancy
+    try { window.dispatchEvent(evt); } catch (e) {}
+  }
+
+  /* ---------- Init components ---------- */
+  const components = document.querySelectorAll("div[text-area-component]");
+  components.forEach(div => {
+    try {
+      const jsonPath = div.getAttribute("json-path");
+      const componentId = div.getAttribute("text-area-component");
+      const continueBtn = div.getAttribute("continue");
+      const cfRequired = div.getAttribute("cf-required");
+
+      // find or build editable
+      let editable = div.querySelector('[contenteditable="true"]');
+      const textarea = div.querySelector("textarea");
+
+      if (!editable) {
+        if (!textarea) return;
+        editable = document.createElement('div');
+        editable.setAttribute('contenteditable', 'true');
+        editable.setAttribute('text-area-editable', componentId || '');
+        if (continueBtn) editable.setAttribute('continueButtonID', continueBtn);
+        editable.className = textarea.className || '';
+        const initial = textarea.value || textarea.textContent || '';
+        editable.innerHTML = initial === '' ? '' : initial.replace(/\n/g, '<br>');
+        textarea.replaceWith(editable);
+      } else {
+        editable.setAttribute('text-area-editable', componentId || '');
+        if (continueBtn) editable.setAttribute('continueButtonID', continueBtn);
+      }
+
+      // create or reuse hidden (initial value kept)
+      let hidden = div.querySelector(`input[type="hidden"][cf-json-path="${jsonPath}"]`);
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.setAttribute('cf-json-path', jsonPath);
+        hidden.setAttribute('text-area-hidden', componentId || '');
+        hidden.name = jsonPath || '';
+        hidden.value = sanitizeContent(editable.innerHTML);
+        
+        if (continueBtn) hidden.setAttribute('continue-trigger', continueBtn);
+        div.appendChild(hidden);
+      } else {
+        hidden.setAttribute('text-area-hidden', componentId || '');
+        if (continueBtn) hidden.setAttribute('continue-trigger', continueBtn);
+        if (!hidden.value) hidden.value = sanitizeContent(editable.innerHTML);
+      }
+
+      // ⭐ AQUI ESTA LA CORRECCIÓN
+      if (cfRequired === 'true') {
+        hidden.setAttribute('always-required', '');
+        hidden.setAttribute('data-required', '');
+      }
+
+      // locate save button inside the same component (if exists)
+      const saveBtn = div.querySelector('.save');
+
+      // ensure initial state: keep whatever classes markup sets (we do not override),
+      // but if saveBtn exists and doesn't have 'inutil' initially, leave it as is.
+      // The behavior: click on editable -> remove 'inutil'; click save -> save & re-add 'inutil'.
+
+      // rich buttons: keep existing behavior but do NOT update hidden automatically
+      const richEls = Array.from(div.querySelectorAll('.rich'));
+      richEls.forEach(r => r.classList.remove('style-active'));
+      richEls.forEach(btn => {
+        btn.addEventListener('mousedown', (ev) => {
+          ev.preventDefault();
+          saveSelection(editable);
+        });
+        if (!btn.hasAttribute('tabindex')) btn.setAttribute('tabindex','0');
+        btn.addEventListener('keydown', (ev) => {
+          if (ev.key === ' ' || ev.key === 'Spacebar' || ev.key === 'Enter') {
+            ev.preventDefault();
+            btn.click();
+          }
+        });
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          restoreSelection(editable);
+          const cmd = commandForElement(btn);
+          if (cmd) applyCommand(editable, cmd);
+          // cosmetic toggle only
+          btn.classList.toggle('style-active');
+        });
+      });
+
+      // track selection
+      ['keyup','mouseup','focus','input','compositionend'].forEach(evt => {
+        editable.addEventListener(evt, () => {
+          try {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              const range = sel.getRangeAt(0).cloneRange();
+              if (editable.contains(range.commonAncestorContainer)) selectionMap.set(editable, range);
+            }
+          } catch(e){}
+        });
+      });
+
+      // paste: sanitize visible content but DO NOT update hidden until Save
+      editable.addEventListener('paste', () => {
+        setTimeout(() => {
+          try {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              const range = sel.getRangeAt(0).cloneRange();
+              if (editable.contains(range.commonAncestorContainer)) selectionMap.set(editable, range);
+            }
+          } catch(e){}
+          // sanitize display (we don't touch hidden)
+          const sanitized = sanitizeContent(editable.innerHTML);
+          // replace innerHTML only if sanitized differs and not empty (to keep structure)
+          if (sanitized !== sanitizeContent(editable.innerHTML)) {
+            editable.innerHTML = sanitized;
+          }
+        }, 10);
+      });
+
+      // On click (focus) inside editable -> remove inutil from saveBtn (enable visually)
+      editable.addEventListener('pointerdown', (ev) => {
+        try {
+          // only affect saveBtn within this div
+          if (saveBtn && saveBtn.classList.contains('inutil')) {
+            saveBtn.classList.remove('inutil');
+            // if it's a real <button>, also enable it
+            if (saveBtn.tagName === 'BUTTON') saveBtn.disabled = false;
+            // if anchor, remove aria-disabled
+            saveBtn.removeAttribute('aria-disabled');
+          }
+        } catch (e){}
+      });
+
+      // Optional: also remove inutil on focus via keyboard
+      editable.addEventListener('focus', () => {
+        try {
+          if (saveBtn && saveBtn.classList.contains('inutil')) {
+            saveBtn.classList.remove('inutil');
+            if (saveBtn.tagName === 'BUTTON') saveBtn.disabled = false;
+            saveBtn.removeAttribute('aria-disabled');
+          }
+        } catch (e){}
+      });
+
+      // Save button click: update hidden, dispatch event, re-add inutil
+      if (saveBtn) {
+        saveBtn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          // If save is currently 'inutil', ignore click
+          if (saveBtn.classList.contains('inutil')) return;
+          try {
+            // update hidden only here
+            const newVal = sanitizeContent(editable.innerHTML);
+            hidden.value = newVal;
+            // dispatch valid-change-hidden if continue-trigger present
+            const continueTrigger = hidden.getAttribute('continue-trigger');
+            if (continueTrigger) {
+              dispatchValidChangeHidden(continueTrigger);
+            }
+            // visually disable save again
+            saveBtn.classList.add('inutil');
+            if (saveBtn.tagName === 'BUTTON') saveBtn.disabled = true;
+            saveBtn.setAttribute('aria-disabled', 'true');
+            // optionally blur editable so user sees save effect
+            try { editable.blur(); } catch (e){}
+          } catch (e) {
+            console.error("[text-area] save handler error:", e);
+          }
+        });
+      }
+
+      // Keep horizontal scroll helper (but DO NOT auto-sync hidden)
+      editable.addEventListener("input", () => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          const containerRect = editable.getBoundingClientRect();
+          if (rect.right > containerRect.right) {
+            editable.scrollLeft += rect.right - containerRect.right + 5;
+          } else if (rect.left < containerRect.left) {
+            editable.scrollLeft -= (containerRect.left - rect.left) + 5;
+          }
+        }
+      });
+
+      // Remove automatic blur->hidden update: (intentionally do not set blur listener that updates hidden)
+      // This component only updates hidden when user clicks Save as requested.
+
+    } catch (err) {
+      console.error('text-area-component init error for container:', div, err);
+    }
+  });
+
+  // finished
+  document.dispatchEvent(new CustomEvent("text-area-ready"));
+});
+</script>

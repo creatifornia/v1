@@ -1,0 +1,569 @@
+
+<!-- CSS -->
+<style>
+  :root{
+    --wf-dt-bg: transparent;
+    --wf-dt-border: #e7cfb1;
+    --wf-dt-accent: #e5813e;
+    --wf-dt-text: #292626;
+    --wf-dt-muted: #999;
+    --wf-dt-radius: 12px;
+    --wf-dt-shadow: 0 6px 18px rgba(17,24,39,0.06);
+    --wf-flat-bg: #fff;
+    --wf-flat-accent: #e7cfb1;
+  }
+
+  .wf-datetime-picker{
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    background: var(--wf-dt-bg);
+    border: 1px solid var(--wf-dt-border);
+    border-radius: var(--wf-dt-radius);
+    box-shadow: var(--wf-dt-shadow);
+    max-width: 520px;
+    font-family: 'Satoshi Variable', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color: var(--wf-dt-text);
+    width: 300px;
+  }
+
+  .wf-dt-row{ display:flex; flex-direction:column; gap:6px; }
+
+  .wf-dt-input{
+    height:44px;
+    padding:8px 12px;
+    border-radius:12px;
+    border:1px solid var(--wf-dt-border);
+    outline:none;
+    font-size:15px;
+    background:transparent;
+    transition: box-shadow .15s, border-color .15s;
+    color: #e7cfb1;
+    width:100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .wf-dt-input:focus{ box-shadow:0 6px 18px rgba(231,207,177,0.12); border-color:var(--wf-dt-accent); }
+
+  .wf-dt-actions{ display:flex; align-items:center; gap:12px; margin-top:6px; }
+
+  /* Button base tweaks to improve touch behaviour */
+  .button {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+
+  .wf-dt-confirm{
+    padding:10px 16px;
+    border-radius:12px;
+    border:none;
+    font-weight:700;
+    cursor:pointer;
+    background:#e7cfb1;
+    color:#292626;
+    transition: transform .06s ease, opacity .12s ease, box-shadow .12s ease;
+  }
+
+  /* Flatpickr overrides para que combine con tu estilo */
+  .flatpickr-calendar{
+    border-radius:10px !important;
+    border:1px solid var(--wf-dt-border) !important;
+    box-shadow: 0 12px 30px rgba(17,24,39,0.08) !important;
+    background: var(--wf-flat-bg) !important;
+    color: var(--wf-dt-text) !important;
+  }
+
+  .flatpickr-day.selected, .flatpickr-day.today{
+    background: var(--wf-flat-accent) !important;
+    color: #292626 !important;
+    border-color: #e7cfb1;
+  }
+  .flatpickr-weekday{ 
+    color: var(--wf-dt-muted) !important; 
+    font-family: 'Satoshi variable' !important;
+  }
+  .flatpickr-months .flatpickr-current-month .flatpickr-month{ 
+    color:var(--wf-dt-text) !important;
+    font-family: 'Satoshi variable' !important;
+   }
+  .flatpickr-time input{ color: var(--wf-dt-text) !important; }
+
+  /* ============================
+     Mejoras visuales de las flechas (arrowUp / arrowDown)
+     - tamaño mayor
+     - siempre visibles
+     - mejor target táctil
+     ============================ */
+
+  .flatpickr .numInputWrapper {
+    position: relative;
+    padding-right: 48px; /* espacio para las flechas */
+  }
+
+  .flatpickr .numInputWrapper .arrowUp,
+  .flatpickr .numInputWrapper .arrowDown {
+    position: absolute;
+    right: 8px;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--wf-flat-accent);
+    color: #292626;
+    font-size: 14px;
+    line-height: 1;
+    box-shadow: 0 6px 12px rgba(17,24,39,0.08);
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .flatpickr .numInputWrapper .arrowUp { top: 4px; }
+  .flatpickr .numInputWrapper .arrowDown { bottom: 4px; }
+
+  /* sustituimos cualquier contenido interno por triángulos legibles */
+  .flatpickr .numInputWrapper .arrowUp::after { content: "▲"; font-weight: 700; }
+  .flatpickr .numInputWrapper .arrowDown::after { content: "▼"; font-weight: 700; }
+
+  /* aumentar clickable area en móviles */
+  .flatpickr .numInputWrapper input.flatpickr-hour,
+  .flatpickr .numInputWrapper input.flatpickr-minute {
+    padding-right: 54px;
+  }
+
+  /* Mejor contraste en estado hover/active */
+  .flatpickr .numInputWrapper .arrowUp:active,
+  .flatpickr .numInputWrapper .arrowDown:active {
+    transform: translateY(1px);
+    box-shadow: 0 4px 10px rgba(17,24,39,0.12);
+  }
+
+  @media (max-width:520px){
+    .wf-datetime-picker{ max-width:100%; padding:12px; }
+    .wf-dt-actions{ flex-direction:column; align-items:flex-start; gap:8px; }
+    .flatpickr .numInputWrapper .arrowUp,
+    .flatpickr .numInputWrapper .arrowDown {
+      width: 40px;
+      height: 40px;
+      right: 6px;
+    }
+  }
+</style>
+
+
+
+<!-- codigos generales -->
+<!-- Flatpickr L10N: Español -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+<!-- Luxon (para manejo robusto de zonas IANA) -->
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+
+<!-- Flatpickr JS (asegúrate de tenerlo incluido en tu página) -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+
+
+<!-- Agrega hover-cursor -->
+<script>
+  // Código JavaScript
+document.addEventListener('data-ready', function() {
+    // Selecciona todos los elementos del DOM que tienen la clase 'flatpickr-calendar'
+    const calendars = document.querySelectorAll('.flatpickr-calendar');
+
+    // Itera sobre la lista de elementos y agrega la clase 'hover-cursor'
+    calendars.forEach(calendar => {
+        calendar.classList.add('hover-cursor');
+    });
+});
+</script>
+
+<!-- REMPLAZABLES
+ component-id
+ schedule.replace
+-->
+
+<!-- Componente -->
+<div class="wf-datetime-picker hover-cursor" data-datetime-component-id>
+
+  <!-- Hidden input de Webflow -->
+  <input type="hidden" name="schedule.replace" cf-json-path="schedule.replace" id="wf_hidden_datetime_component-id" value="">
+
+  <!-- Single picker control visual -->
+  <label class="wf-dt-row" for="wf_datetime_input_component-id">
+    <input class="wf-dt-input input extended-input" type="text" id="wf_datetime_input_component-id" placeholder="Selecciona fecha y hora" aria-label="Selecciona fecha y hora" autocomplete="off" />
+  </label>
+
+  <div class="wf-dt-actions">
+    <button type="button" class="button Hover Cursor inutil" id="wf_confirm_btn_component-id" aria-disabled="true" tr="confirmar">Confirmar</button>
+    <button type="button" class="button Hover Cursor" id="wf_clean_btn_component-id" aria-disabled="true" clean-date-button="" tr="reiniciar">Reiniciar</button>
+  </div>
+</div>
+
+<!-- Luxon (para manejo robusto de zonas IANA) -->
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+
+<!-- Flatpickr JS (asegúrate de tenerlo incluido en tu página) -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<!-- ===========================
+     Script: Flatpickr combined date+time + lógica (componente-id)
+     =========================== -->
+<script>
+(function(){
+  'use strict';
+
+  /* ------------- CONFIG ------------- */
+  const COMPONENT_ID = 'data-datetime-component-id'; // único por componente (placeholder)
+  const CONTINUE_BUTTON_ID = 'continue-id'; // <- cambia aquí si necesitas
+  const HIDDEN_INPUT_ID = 'wf_hidden_datetime_component-id'; // único por componente (placeholder)
+  const HIDDEN_CF_JSON_PATH = 'schedule.replace'; // único por componente (placeholder)
+  const PREVENT_PAST = true;      // true => intentamos prevenir selección pasada
+  const DATETIME_FORMAT = 'iso';  // 'iso' | 'human' -> no obligatorio ahora (guardamos JSON)
+  const TIME_24H = true;          // formato de tiempo de flatpickr
+  const FORCE_FLATPICKR_ON_MOBILE = true; // true para forzar Flatpickr en móviles
+
+  /* ------------- ELEMENTS ------------- */
+  const root = document.querySelector('[data-datetime-component-id]'); // único por componente
+  if (!root) return;
+  const pickerInput = root.querySelector('#wf_datetime_input_component-id'); // único por componente
+  const confirmBtn = root.querySelector('#wf_confirm_btn_component-id'); // único por componente
+  const cleanBtn = root.querySelector('#wf_clean_btn_component-id'); // único por componente
+  const hiddenInput = root.querySelector('#'+HIDDEN_INPUT_ID);
+
+  /* ------------- Luxon shortcut ------------- */
+  const { DateTime } = (window.luxon || { DateTime: null });
+  if (!DateTime) {
+    console.warn('Luxon no está disponible. Las conversiones entre zonas IANA no funcionarán correctamente.');
+  }
+
+  /* ------------- HELPERS ------------- */
+  function pad2(n){ return String(n).padStart(2, '0'); }
+
+  function toLocalISO(dateObj){
+    // formato YYYY-MM-DDTHH:MM:SS (sin zona)
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth()+1).padStart(2,'0');
+    const d = String(dateObj.getDate()).padStart(2,'0');
+    const H = String(dateObj.getHours()).padStart(2,'0');
+    const M = String(dateObj.getMinutes()).padStart(2,'0');
+    const S = String(dateObj.getSeconds()).padStart(2,'0');
+    return `${y}-${m}-${d}T${H}:${M}:${S}`;
+  }
+
+  function formatOffsetFromMinutes(offsetMinutes){
+    // offsetMinutes = minutes east of UTC (luxon uses minutes with sign + = east)
+    const sign = offsetMinutes <= 0 ? '-' : '+';
+    const abs = Math.abs(offsetMinutes);
+    const hh = Math.floor(abs / 60);
+    const mm = abs % 60;
+    return `${sign}${pad2(hh)}:${pad2(mm)}`;
+  }
+
+  function dispatchChangeOnHidden() {
+    try {
+      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch(e){}
+  }
+
+  function setHiddenValue(valObj) {
+    if (!hiddenInput) return;
+    try {
+      const json = JSON.stringify(valObj);
+      hiddenInput.value = json;
+      // añadir data- attributes para acceso rápido
+      if (valObj && typeof valObj === 'object') {
+        try { hiddenInput.setAttribute('data-iso-utc', valObj.iso_utc || ''); } catch(e){}
+        try { hiddenInput.setAttribute('data-epoch-ms', String(valObj.epoch_ms || '')); } catch(e){}
+        try { hiddenInput.setAttribute('data-tz', valObj.tz_name || ''); } catch(e){}
+        try { hiddenInput.setAttribute('data-datetime-local', valObj.datetime_with_zone || ''); } catch(e){}
+        try { hiddenInput.setAttribute('data-display', valObj.display || ''); } catch(e){}
+      }
+      // dispatch change
+      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch(e){
+      console.error('setHiddenValue error', e);
+    }
+  }
+
+  /* ------------- Robust enable/disable for all devices ------------- */
+  function setConfirmEnabled(enabled){
+    try {
+      if (enabled){
+        confirmBtn.classList.remove('inutil');
+        confirmBtn.removeAttribute('disabled');
+        confirmBtn.disabled = false;
+        confirmBtn.setAttribute('aria-disabled','false');
+      } else {
+        confirmBtn.classList.add('inutil');
+        confirmBtn.setAttribute('aria-disabled','true');
+        confirmBtn.disabled = true;
+        try { if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch(e){}
+        try {
+          const ev = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+          confirmBtn.dispatchEvent(ev);
+          document.dispatchEvent(ev);
+        } catch(e){}
+        try {
+          const pev = typeof PointerEvent === 'function' ? new PointerEvent('pointerup', { bubbles: true }) : null;
+          if (pev) { confirmBtn.dispatchEvent(pev); document.dispatchEvent(pev); }
+        } catch(e) {}
+        try { document.dispatchEvent(new Event('touchend', { bubbles: true })); } catch(e){}
+        try { void confirmBtn.offsetWidth; } catch(e){}
+      }
+    } catch(e){}
+  }
+
+  /* ------------- Flatpickr init ------------- */
+  const fp = flatpickr(pickerInput, {
+    locale: 'es',
+    enableTime: true,
+    noCalendar: false,
+    dateFormat: 'Y-m-d H:i',       // valor interno en input (no usado como único origen ahora)
+    altInput: true,
+    altFormat: "j \\de F \\de Y H:i", // formato visible en español
+    time_24hr: TIME_24H,
+    minuteIncrement: 1,
+    defaultHour: 0,
+    defaultMinute: 0,
+    allowInput: false,
+    disableMobile: !FORCE_FLATPICKR_ON_MOBILE ? false : true,
+    minDate: PREVENT_PAST ? new Date() : null,
+    onChange: handlePickerChange,
+    onOpen: handlePickerOpen
+  });
+
+  function handlePickerOpen(selectedDates, dateStr, instance){
+    // nothing special here
+  }
+
+  function isSelectedPast(){
+    const d = fp.selectedDates && fp.selectedDates[0];
+    if (!d) return false;
+    return d.getTime() < Date.now();
+  }
+
+  function handlePickerChange(selectedDates){
+    const valid = Array.isArray(selectedDates) && selectedDates.length > 0 && !(PREVENT_PAST && isSelectedPast());
+    setConfirmEnabled(valid);
+  }
+
+  /* ------------- Inicializar desde hidden si ya tiene valor ------------- */
+  (function initFromHidden(){
+    try {
+      const raw = hiddenInput && hiddenInput.value;
+      if (raw && raw.trim()){
+        // Intentamos parsear si el hidden ya contiene JSON (nuestro formato)
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.datetime_with_zone) {
+            // dejamos que flatpickr lo cargue si possible
+            const maybeDate = parsed.datetime_with_zone;
+            fp.setDate(maybeDate, true, 'Y-m-d\\THH:mm:ssZZ'); // try ISO with offset
+            setConfirmEnabled(!(PREVENT_PAST && isSelectedPast()));
+            return;
+          }
+        } catch(e){}
+        // fallback: si es un ISO simple
+        if (raw.indexOf('T') > -1){
+          const [d, t] = raw.split('T');
+          const hhmm = t.split(':').slice(0,2).join(':');
+          const dt = new Date(d + 'T' + hhmm + ':00');
+          if (!isNaN(dt.getTime())){
+            fp.setDate(dt, true, 'Y-m-d H:i');
+            setConfirmEnabled(!(PREVENT_PAST && dt.getTime() < Date.now()));
+            return;
+          }
+        } else {
+          fp.setDate(raw, true);
+          setConfirmEnabled(fp.selectedDates.length>0 && !(PREVENT_PAST && isSelectedPast()));
+          return;
+        }
+      }
+    } catch(e){}
+    setConfirmEnabled(false);
+  })();
+
+  /* ------------- Utilities to build payload formats ------------- */
+  function getSelectedTzName() {
+    // Busca select global #select-tz si existe; si no, usa zona del navegador
+    const sel = document.getElementById('select-tz');
+    if (sel && sel.value) return sel.value;
+    try {
+      const detected = Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : null;
+      return detected || 'UTC';
+    } catch (e) {
+      return 'UTC';
+    }
+  }
+
+  function buildFormatsFromSelectedDate(selDate) {
+    // selDate es un JS Date con componentes seleccionados (año,mes,día,h,m,s)
+    // Queremos interpretar esos componentes en la zone tzName (evento presencial)
+    const tzName = getSelectedTzName();
+    let dt; // luxon DateTime in tzName
+    if (DateTime) {
+      // Construir dt desde partes (garantiza interpretar en tzName)
+      const parts = {
+        year: selDate.getFullYear(),
+        month: selDate.getMonth() + 1,
+        day: selDate.getDate(),
+        hour: selDate.getHours(),
+        minute: selDate.getMinutes(),
+        second: selDate.getSeconds()
+      };
+      dt = DateTime.fromObject(parts, { zone: tzName });
+      if (!dt.isValid) {
+        // fallback: interpret in system zone then setZone
+        const sys = DateTime.fromJSDate(selDate);
+        dt = DateTime.fromObject(parts, { zone: tzName, setZone: true });
+        if (!dt.isValid) dt = sys.setZone(tzName, { keepLocalTime: true });
+      }
+    } else {
+      // Sin luxon: crear aproximaciones con Date (menos exacto para IANA)
+      const isoLocal = toLocalISO(selDate); // Y-m-dTHH:MM:SS
+      // fallback: treat as local and compute UTC via Date
+      const asIso = isoLocal + 'Z';
+      const jsd = new Date(asIso);
+      const epoch = jsd.getTime();
+      return {
+        iso_utc: new Date(epoch).toISOString(),
+        epoch_ms: epoch,
+        epoch_s: Math.floor(epoch/1000),
+        date: isoLocal.slice(0,10),
+        time: isoLocal.slice(11,16),
+        datetime_local: isoLocal,
+        datetime_with_zone: isoLocal,
+        tz_name: getSelectedTzName(),
+        tz_offset_at_event: '',
+        display: isoLocal,
+        rfc2822: new Date(epoch).toUTCString(),
+        ics_dtstamp: new Date(epoch).toISOString().replace(/[:-]/g,'').split('.')[0] + 'Z'
+      };
+    }
+
+    // Ahora construimos variantes usando luxon
+    const isoWithOffset = dt.toISO({ suppressMilliseconds: true }); // includes offset and TZ offset info
+    const isoUTC = dt.toUTC().toISO({ suppressMilliseconds: true });
+    const epochMs = dt.toMillis();
+    const epochS = Math.floor(epochMs / 1000);
+    const dateOnly = dt.toFormat('yyyy-MM-dd');
+    const timeOnly = dt.toFormat('HH:mm');
+    const datetimeNoOffset = dt.toFormat("yyyy-MM-dd'T'HH:mm:ss");
+    const tzOffset = formatOffsetFromMinutes(dt.offset); // dt.offset in minutes
+    const display = dt.setLocale('es').toLocaleString(DateTime.DATETIME_MED); // human readable
+    const rfc2822 = dt.toRFC2822();
+    const ics = dt.toFormat("yyyyMMdd'T'HHmmss");
+
+    // Additional: iso_local_no_offset (no offset)
+    const isoLocalNoOffset = datetimeNoOffset;
+
+    // Build final object
+    const payload = {
+      // canonical
+      iso_utc: isoUTC,                       // 2025-10-11T19:30:00Z
+      iso_local_with_offset: isoWithOffset,  // 2025-10-11T14:30:00-06:00
+      iso_local: isoLocalNoOffset,           // 2025-10-11T14:30:00 (no offset)
+      datetime_with_zone: isoWithOffset,
+      datetime_local: isoLocalNoOffset,
+      date: dateOnly,                        // YYYY-MM-DD
+      time: timeOnly,                        // HH:mm
+      epoch_ms: epochMs,
+      epoch_s: epochS,
+      tz_name: tzName,
+      tz_offset_at_event: tzOffset,          // ±HH:MM
+      display: display,                      // human readable (locale 'es')
+      rfc2822: rfc2822,
+      ics_dtstamp: ics,
+      // legacy friendly keys
+      start_utc: isoUTC,
+      start_iso: isoWithOffset,
+      start_local: isoLocalNoOffset
+    };
+
+    return payload;
+  }
+
+  /* ------------- Confirmar (actualiza hidden + dispara evento) ------------- */
+  confirmBtn.addEventListener('click', function(evt){
+    evt.preventDefault();
+    if (confirmBtn.classList.contains('inutil')) return;
+
+    const sel = fp.selectedDates && fp.selectedDates[0];
+    if (!sel) return;
+
+    if (PREVENT_PAST && sel.getTime() < Date.now()){
+      setConfirmEnabled(false);
+      return;
+    }
+
+    // Construir payload con todos los formatos (usa Luxon para tz-safe)
+    const payload = buildFormatsFromSelectedDate(sel);
+
+    // Guardar JSON en hidden y también data- attrs
+    setHiddenValue(payload);
+
+    // Disparar evento compatible con tu receptor
+    const detail = {
+      continueButtonId: CONTINUE_BUTTON_ID,
+      jsonPath: HIDDEN_CF_JSON_PATH,
+      value: hiddenInput ? hiddenInput.value : (payload.iso_utc || '')
+    };
+    document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail }));
+
+    // Volver a inutil
+    setConfirmEnabled(false);
+  });
+
+  /* ------------- Clean (limpiar hidden + limpiar calendario + disparar event) ------------- */
+  cleanBtn.addEventListener('click', function(evt){
+    try {
+      evt && evt.preventDefault && evt.preventDefault();
+    } catch(e){}
+    // Limpiar flatpickr selection and visible altInput
+    try {
+      fp.clear();
+      // also clear altInput if present
+      try {
+        if (fp.altInput) fp.altInput.value = '';
+      } catch(e){}
+    } catch(e){}
+
+    // Clear hidden value and data attrs
+    try {
+      hiddenInput.value = '';
+      hiddenInput.removeAttribute('data-iso-utc');
+      hiddenInput.removeAttribute('data-epoch-ms');
+      hiddenInput.removeAttribute('data-tz');
+      hiddenInput.removeAttribute('data-datetime-local');
+      hiddenInput.removeAttribute('data-display');
+      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch(e){}
+
+    // Disable confirm again
+    setConfirmEnabled(false);
+
+    // Emitir evento de limpieza (compatible con listeners)
+    const detail = {
+      continueButtonId: CONTINUE_BUTTON_ID,
+      jsonPath: HIDDEN_CF_JSON_PATH,
+      value: ''
+    };
+    try { document.dispatchEvent(new CustomEvent('valid-change-hidden', { detail })); } catch(e){}
+  });
+
+  // prevenir pegar en el input (flatpickr controla la selección)
+  pickerInput.addEventListener('paste', (e) => e.preventDefault());
+
+})();
+</script>

@@ -1,9 +1,10 @@
 <!-- ✅ Uploadcare Config -->
-<!-- details.brushes.files -->
-<!-- detailsBrushes -->
-<!-- continue-trigger="continue-5" -->
+<!--description.craft-others.gallery-->
+<!--cf-json-path="description.others.gallery-->
+<!--descriptionOthersCraft-->
+<!--continue-trigger="continue-5"-->
 <uc-config
-  ctx-name="details.brushes.files"
+  ctx-name="description.craft-others.gallery"
   pubkey="a4083f9a6c359a1aa43b"
   locale-name="es"
   multiple="true"
@@ -16,77 +17,65 @@
 ></uc-config>
 
 <!-- ✅ Uploadcare File Uploader -->
-<uc-file-uploader-minimal ctx-name="details.brushes.files">
-  <uc-form-input ctx-name="details.brushes.files"></uc-form-input>
+<uc-file-uploader-minimal ctx-name="description.craft-others.gallery">
+  <uc-form-input ctx-name="description.craft-others.gallery"></uc-form-input>
 </uc-file-uploader-minimal>
 
 <!-- ✅ Hidden Input vinculado -->
 <input
   type="hidden"
-  name="details.brushes.files"
-  cf-json-path="details.brushes.files"
+  name="description.craft-others.gallery"
+  cf-json-path="description.others.gallery"
   continue-trigger="continue-5"
 />
 
-<!-- ✅ Uploadcare Context Listener -->
-<uc-upload-ctx-provider ctx-name="details.brushes.files"></uc-upload-ctx-provider>
+<!-- ✅ Uploadcare Context Listener (REEMPLAZAR SOLO ESTE BLOQUE) -->
+<uc-upload-ctx-provider ctx-name="description.craft-others.gallery"></uc-upload-ctx-provider>
 <script>
 customElements.whenDefined('uc-upload-ctx-provider').then(() => {
   setTimeout(() => {
-    const ctxProvider = document.querySelector(
-      'uc-upload-ctx-provider[ctx-name="details.brushes.files"]'
-    );
+    const ctxProvider = document.querySelector('uc-upload-ctx-provider[ctx-name="description.craft-others.gallery"]');
     if (!ctxProvider) return;
 
     const storageKey = "uploadcare";
-    const pathKey = "details.brushes.files";
+    const pathKey = "description.craft-others.gallery";
 
     /* ----------------- Utils ----------------- */
+    function safeParseJSON(str, fallback = null) {
+      try { return JSON.parse(str); } catch (e) { return fallback; }
+    }
+
     function getIdentity(detail) {
       if (!detail) return null;
       if (typeof detail === 'object') {
         if (detail.uuid) return detail.uuid;
         if (detail.id) return detail.id;
-        if (detail.file && (detail.file.uuid || detail.file.id)) {
-          return detail.file.uuid || detail.file.id;
-        }
+        if (detail.file && (detail.file.uuid || detail.file.id)) return detail.file.uuid || detail.file.id;
       }
-      const asString =
-        typeof detail === 'string'
-          ? detail
-          : (detail && (detail.cdnUrl || detail.url || JSON.stringify(detail)));
+      const asString = typeof detail === 'string'
+        ? detail
+        : (detail && (detail.cdnUrl || detail.url || JSON.stringify(detail)));
       if (!asString) return null;
-      const uuidMatch = String(asString).match(
-        /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
-      );
-      return uuidMatch ? uuidMatch[1] : null;
+      const m = String(asString).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      return m ? m[1] : null;
     }
 
     function getFileUrl(detail) {
       if (!detail) return null;
       if (typeof detail === 'string') return detail;
       if (typeof detail === 'object') {
-        return (
-          detail.cdnUrl ||
-          detail.originalUrl ||
-          detail.url ||
-          detail.fileUrl ||
-          detail.previewUrl ||
-          null
-        );
+        return detail.cdnUrl || detail.originalUrl || detail.url || detail.fileUrl || detail.previewUrl || null;
       }
       return null;
     }
 
     function normalizeStoredArray(arr) {
       if (!Array.isArray(arr)) return [];
-      return arr
-        .map(item => {
-          if (typeof item === 'string') return { url: item };
-          if (typeof item === 'object' && item !== null) return item;
-          return { value: item };
-        })
-        .filter(Boolean);
+      return arr.map(item => {
+        if (typeof item === 'string') return { url: item };
+        if (typeof item === 'object' && item !== null) return item;
+        return { value: item };
+      }).filter(Boolean);
     }
 
     function findIndexInArray(arr, incoming) {
@@ -102,13 +91,56 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
       return -1;
     }
 
+    /**
+     * Encuentra el "gallery root" relativo al ctxProvider para operar localmente.
+     * Prioriza: ancestor con atributo [uploader], luego .gallery, luego form, luego document.
+     */
+    function locateGalleryRoot() {
+      return ctxProvider.closest('[uploader]') || ctxProvider.closest('.gallery') || ctxProvider.closest('form') || document;
+    }
+
+    /**
+     * Actualiza la clase 'uploaded' en elementos relevantes **dentro** del gallery root:
+     *  - <uc-file-uploader-minimal[ctx-name=...]> (host)
+     *  - a[upload-button] o .upload-button (light DOM)
+     *
+     * hasFiles = true => añadir clase uploaded
+     * hasFiles = false => quitar clase uploaded
+     */
+    function updateUploadButtonVisualByArray(arr) {
+      try {
+        const hasFiles = Array.isArray(arr) && arr.length > 0;
+        const root = locateGalleryRoot();
+
+        // 1) host uploader (si existe dentro del root)
+        let host = root.querySelector(`uc-file-uploader-minimal[ctx-name="${pathKey}"]`);
+        // fallback: el ctxProvider puede estar dentro del host -> buscar ancestor host
+        if (!host) host = ctxProvider.closest('uc-file-uploader-minimal');
+
+        if (host && host.classList) host.classList.toggle('uploaded', hasFiles);
+
+        // 2) upload-button dentro del mismo gallery root (no global)
+        const uploadBtn = root.querySelector('a[upload-button], .upload-button, button.upload-button');
+        if (uploadBtn && uploadBtn.classList) uploadBtn.classList.toggle('uploaded', hasFiles);
+
+      } catch (err) {
+        // no queremos romper nada por temas de visual toggle
+        console.debug('updateUploadButtonVisualByArray error', err);
+      }
+    }
+
+    /* ----------------- updateHiddenInput (mantiene store y actualiza visual) ----------------- */
     function updateHiddenInput(arr) {
-      const hidden = ctxProvider.closest("form")?.querySelector(
-        `input[type="hidden"][name="${pathKey}"]`
-      );
+      const hidden = ctxProvider.closest("form")?.querySelector(`input[type="hidden"][name="${pathKey}"]`) 
+                  || ctxProvider.closest(locateGalleryRoot())?.querySelector(`input[type="hidden"][name="${pathKey}"]`);
       if (hidden) {
-        hidden.value = JSON.stringify(arr);
+        try { hidden.value = JSON.stringify(arr || []); } catch (e) { hidden.value = '[]'; }
         console.log("✏️ Hidden input actualizado:", hidden.value);
+        const parsed = safeParseJSON(hidden.value, []);
+        updateUploadButtonVisualByArray(Array.isArray(parsed) ? parsed : []);
+      } else {
+        // si no existe hidden, aún actualizamos la visual basándonos en arr
+        updateUploadButtonVisualByArray(Array.isArray(arr) ? arr : []);
       }
     }
 
@@ -118,11 +150,7 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
       console.log("[upload/update] file-url-changed:", DETAILS);
 
       let store = {};
-      try {
-        store = JSON.parse(localStorage.getItem(storageKey)) || {};
-      } catch {
-        store = {};
-      }
+      try { store = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { store = {}; }
 
       if (!store[pathKey]) store[pathKey] = [];
       store[pathKey] = normalizeStoredArray(store[pathKey]);
@@ -149,23 +177,15 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
       console.log("[remove] file-removed:", DETAILS);
 
       let store = {};
-      try {
-        store = JSON.parse(localStorage.getItem(storageKey)) || {};
-      } catch {
-        store = {};
-      }
+      try { store = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { store = {}; }
 
       if (store[pathKey] && Array.isArray(store[pathKey])) {
         store[pathKey] = normalizeStoredArray(store[pathKey]);
         const idx = findIndexInArray(store[pathKey], DETAILS);
         if (idx >= 0) {
-          // Emitimos evento delete-draft con uuid + size
           const removedFile = store[pathKey][idx];
           document.dispatchEvent(new CustomEvent("delete-draft", {
-            detail: {
-              uuid: removedFile?.uuid,
-              size: removedFile?.size
-            }
+            detail: { uuid: removedFile?.uuid, size: removedFile?.size }
           }));
 
           store[pathKey].splice(idx, 1);
@@ -182,9 +202,7 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
         updateHiddenInput(store[pathKey] || []);
 
         // 🔔 Emitimos valid-change-hidden SOLO si el hidden tiene continue-trigger
-        const hidden = ctxProvider.closest("form")?.querySelector(
-          `input[type="hidden"][name="${pathKey}"]`
-        );
+        const hidden = ctxProvider.closest("form")?.querySelector(`input[type="hidden"][name="${pathKey}"]`);
         if (hidden) {
           const continueId = hidden.getAttribute("continue-trigger");
           if (continueId) {
@@ -196,13 +214,22 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
       }
     });
 
+    // Inicial: sincronizar visual según el hidden actual (por si ya hay archivos en el DOM)
+    try {
+      const formHidden = ctxProvider.closest("form")?.querySelector(`input[type="hidden"][name="${pathKey}"]`);
+      const initial = formHidden ? safeParseJSON(formHidden.value, []) : [];
+      updateUploadButtonVisualByArray(Array.isArray(initial) ? initial : []);
+    } catch (err) { /* silent */ }
+
   }, 100);
 }).catch(err => console.error("❌ Error Uploadcare:", err));
 </script>
 
 
+
 <!-- VALIDATION -->
 <script>
+(() => {
   function getCache(key, path) {
     try {
       const data = JSON.parse(localStorage.getItem(key));
@@ -214,7 +241,7 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
 
   const seenDrafts = new Set();
 
-  const detailsBrushes = (fileEntry) => {
+  const descriptionOthersCraft = (fileEntry) => {
     const MAX_SIZE_MB = 10;
     const MAX_SIZE_BYTES = MAX_SIZE_MB * 1000 * 1000;
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
@@ -263,7 +290,7 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
     }
 
     // 🔹 Selección directa al hidden input vinculado
-    const hiddenInput = document.querySelector('input[type="hidden"][cf-json-path="details.brushes.files"]');
+    const hiddenInput = document.querySelector('input[type="hidden"][cf-json-path="description.others.gallery"]');
 
     if (hiddenInput) {
       const continueButtonId = hiddenInput.getAttribute("continue-trigger");
@@ -280,8 +307,9 @@ customElements.whenDefined('uc-upload-ctx-provider').then(() => {
 
   document.addEventListener('uploadcare-ready', () => {
     customElements.whenDefined('uc-config').then(() => {
-      const config = document.querySelector('uc-config[ctx-name="details.brushes.files"]');
-      if (config) config.fileValidators = [detailsBrushes];
+      const config = document.querySelector('uc-config[ctx-name="description.craft-others.gallery"]');
+      if (config) config.fileValidators = [descriptionOthersCraft];
     });
   });
+})();
 </script>

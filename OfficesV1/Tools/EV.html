@@ -1,0 +1,108 @@
+<!-- ev event-on-click -->
+<script>
+(function () {
+  'use strict';
+
+  // Parsea el atributo details -> objeto
+  function parseDetails(str) {
+    const out = {};
+    if (!str || typeof str !== 'string') return out;
+
+    // Split por comas (simples), ignora comas vacías
+    const parts = String(str).split(/\s*,\s*/).filter(Boolean);
+
+    parts.forEach(part => {
+      const eqIndex = part.indexOf('=');
+      if (eqIndex === -1) {
+        // si no hay "=", ignoramos (podríamos mapear como flag true, pero no solicitado)
+        return;
+      }
+      const rawKey = part.slice(0, eqIndex).trim();
+      let rawVal = part.slice(eqIndex + 1).trim();
+
+      if (!rawKey) return;
+
+      // detectar listas con | o ;
+      if (rawVal.includes('|') || rawVal.includes(';')) {
+        const arr = rawVal.split(/[|;]+/).map(s => castValue(s.trim())).filter(v => v !== null && v !== undefined && String(v) !== '');
+        out[rawKey] = arr;
+        return;
+      }
+
+      // castear valor simple
+      out[rawKey] = castValue(rawVal);
+    });
+
+    return out;
+  }
+
+  // Castea 'true'/'false' -> boolean, números -> Number, otherwise string
+  function castValue(v) {
+    if (v === null || v === undefined) return v;
+    const s = String(v).trim();
+
+    if (/^(true|false)$/i.test(s)) return s.toLowerCase() === 'true';
+    // entero o decimal (positivo o negativo)
+    if (/^-?\d+(\.\d+)?$/.test(s)) {
+      // convertir a número
+      const n = Number(s);
+      // si se quiere mantener como string en ciertos keys, ajustar aquí
+      return Number.isNaN(n) ? s : n;
+    }
+    // valor vacío -> return empty string
+    return s;
+  }
+
+  // Parsea ev attr -> arreglo de nombres de evento
+  function parseEvAttr(str) {
+    if (!str || typeof str !== 'string') return [];
+    return String(str).split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
+  }
+
+  // Delegated click listener: captura clicks en cualquier elemento que tenga atributo [ev]
+  function onDocClick(evt) {
+    try {
+      const el = evt.target.closest && evt.target.closest('[ev]');
+      if (!el) return;
+
+      const evAttr = el.getAttribute('ev') || '';
+      const evNames = parseEvAttr(evAttr);
+      if (!evNames.length) return;
+
+      const detailsAttr = el.getAttribute('details') || '';
+      const detailObj = parseDetails(detailsAttr);
+
+      // Dispatch each event on document with the parsed detail
+      evNames.forEach(evName => {
+        try {
+          const ce = new CustomEvent(evName, { detail: Object.assign({}, detailObj) });
+          document.dispatchEvent(ce);
+        } catch (dispatchErr) {
+          // swallow per robustness
+          console.error('ev-dispatch error for', evName, dispatchErr);
+        }
+      });
+
+    } catch (err) {
+      console.error('ev-handler error', err);
+    }
+  }
+
+  // Instalación: usa delegación para cubrir elementos dinámicos
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function init() {
+      document.removeEventListener('DOMContentLoaded', init);
+      document.addEventListener('click', onDocClick, false);
+    });
+  } else {
+    document.addEventListener('click', onDocClick, false);
+  }
+
+  // Exponer utiles para debugging si se desea
+  window.__evConfig = {
+    parseDetails,
+    parseEvAttr
+  };
+
+})();
+</script>

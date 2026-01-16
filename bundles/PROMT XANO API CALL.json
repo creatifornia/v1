@@ -1,0 +1,34 @@
+📌 PROMPT — “MODE XANO ACTIVADO”
+
+IMPORTANTE — MODO XANO
+
+Todas mis llamadas API se hacen usando el SDK:
+xano.get(path) o xano.post(path, body?)
+
+Nunca construyas la URL completa.
+El path siempre es relativo como:
+/spaces/cancel_cs?secure=XYZ
+
+Si hay auth, usa:
+
+const token = localStorage.getItem("AuthToken");
+if (token) xano.setAuthToken(token);
+
+
+Los parámetros en URL van como query params, no en body:
+Ejemplo correcto:
+
+xano.post(`/endpoint?param=${value}`)
+
+
+Las respuestas de Xano pueden venir como:
+
+{ status, body }  // o a veces solo body
+
+
+Se considera success si status es 2xx o si body existe.
+
+Golpes al servidor: mínimos, sin fetch ni Axios,
+solo xano.get() o xano.post().
+
+Si no sigo exactamente estas reglas, corrígeme. Siempre usar MODO XANO.

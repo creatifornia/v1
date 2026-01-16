@@ -1,0 +1,61 @@
+<script>
+document.addEventListener('options-builder-ready', function() {
+  setTimeout(function() {
+    const TARGET_IDS = [
+      'p-audience-adults-age-327'
+    ];
+
+    const targets = TARGET_IDS
+      .map(id => document.querySelector(`label[data-id="${id}"]`))
+      .filter(Boolean);
+
+    if (!targets.length) return;
+
+    const botonBloquear = document.getElementById('lock-teens');
+    if (botonBloquear) {
+      botonBloquear.addEventListener('click', function() {
+        targets.forEach(el => el.classList.add('inutil', 'hide'));
+      });
+    }
+
+    const botonDesbloquear = document.getElementById('unlock-teens');
+    if (botonDesbloquear) {
+      botonDesbloquear.addEventListener('click', function() {
+        targets.forEach(el => el.classList.remove('inutil', 'hide'));
+      });
+    }
+  }, 500);
+});
+</script>
+
+
+<script>
+document.addEventListener('options-builder-ready', function() {
+  setTimeout(function() {
+    const TARGET_IDS = [
+      'p-participants-list-447',
+      'p-participants-list-349'
+    ];
+
+    const targets = TARGET_IDS
+      .map(id => document.querySelector(`label[data-id="${id}"]`))
+      .filter(Boolean);
+
+    if (!targets.length) return;
+
+    const botonBloquear = document.getElementById('lock-adults');
+    if (botonBloquear) {
+      botonBloquear.addEventListener('click', function() {
+        targets.forEach(el => el.classList.add('inutil', 'hide'));
+      });
+    }
+
+    const botonDesbloquear = document.getElementById('unlock-adults');
+    if (botonDesbloquear) {
+      botonDesbloquear.addEventListener('click', function() {
+        targets.forEach(el => el.classList.remove('inutil', 'hide'));
+      });
+    }
+  }, 500);
+});
+</script>

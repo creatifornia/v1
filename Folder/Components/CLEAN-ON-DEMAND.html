@@ -1,0 +1,153 @@
+<!-- clean-on-demand -->
+<script>
+(function(){
+  'use strict';
+
+  // util: compara componentId con el atributo clean-on-demand (acepta csv, espacios)
+  function nodeMatchesCleanOnDemand(node, componentId) {
+    if (!node || !node.getAttribute) return false;
+    const raw = node.getAttribute('clean-on-demand') || '';
+    const tokens = String(raw).split(/\s*,\s*/).map(t => t.trim()).filter(Boolean);
+    return tokens.includes(componentId);
+  }
+
+  function removeDataRequiredIfNotAlways(el) {
+    try {
+      if (!el || !el.removeAttribute) return;
+      if (!el.hasAttribute || !el.hasAttribute('always-required')) {
+        el.removeAttribute('data-required');
+      }
+    } catch (e) {}
+  }
+
+  function handleValidChangeForCleanOnDemand(e) {
+    try {
+      const detail = e && e.detail ? e.detail : null;
+      if (!detail) return;
+
+      if (detail.dependencies !== true) return;
+
+      const componentId = detail.componentId;
+      if (!componentId) return;
+
+      const allCandidates = Array.from(document.querySelectorAll('[clean-on-demand]'));
+      const targets = allCandidates.filter(n => nodeMatchesCleanOnDemand(n, componentId));
+      if (!targets.length) return;
+
+      targets.forEach(node => {
+        try {
+          // limpieza profunda (reutiliza tu implementación)
+          if (typeof cleanChildComponents === 'function') cleanChildComponents(node);
+
+          // Resetear atributo active en el nodo y sus descendientes
+          if (node.getAttribute && node.getAttribute('active') === 'true') {
+            node.setAttribute('active', 'false');
+          }
+          node.querySelectorAll('[active="true"]').forEach(el => el.setAttribute('active','false'));
+
+          // Ocultar y limpiar dependientes descendientes
+          node.querySelectorAll('[display-depend], [required-depend]').forEach(dep => {
+            try {
+              dep.style.display = 'none';
+              if (typeof cleanChildComponents === 'function') cleanChildComponents(dep);
+              // quitar data-required de inputs dentro del dep (salvo always-required)
+              dep.querySelectorAll('input, textarea, select, input[type="hidden"]').forEach(i => removeDataRequiredIfNotAlways(i));
+            } catch(err){}
+          });
+
+          // Si el propio nodo tiene display-depend o required-depend, aplicarlo también
+          if (node.hasAttribute('display-depend') || node.hasAttribute('required-depend')) {
+            node.style.display = 'none';
+            // quitar data-required de inputs directos y profundos del nodo (salvo always-required)
+            node.querySelectorAll('input, textarea, select, input[type="hidden"]').forEach(i => removeDataRequiredIfNotAlways(i));
+          } else {
+            // en cualquier caso, quitar data-required de inputs dentro del nodo (salvo always-required)
+            node.querySelectorAll('input, textarea, select, input[type="hidden"]').forEach(i => removeDataRequiredIfNotAlways(i));
+          }
+
+          // Normalizar inputs nativos (checkbox/radio unchecked, otros value '')
+          node.querySelectorAll('input, textarea, select').forEach(i => {
+            try {
+              if (i instanceof HTMLInputElement && (i.type === 'checkbox' || i.type === 'radio')) {
+                i.checked = false;
+              } else {
+                i.value = '';
+              }
+              if (i.selectedIndex !== undefined) try { i.selectedIndex = -1; } catch(e){}
+            } catch(e){}
+          });
+
+          // Reset hidden cf-json-path dentro del nodo (sea o no hijo de [component-id])
+          node.querySelectorAll('input[type="hidden"][cf-json-path]').forEach(h => {
+            try {
+              const comp = h.closest('[component-id]');
+              const inputType = comp ? (comp.getAttribute('input-type') || 'checkbox') : 'checkbox';
+              if (typeof getInitialHiddenValue === 'function') {
+                h.value = getInitialHiddenValue(inputType);
+              } else {
+                h.value = (inputType === 'checkbox') ? '[]' : '{}';
+              }
+            } catch(err){}
+          });
+
+          // Reiniciar clases de selección en componentes (f-class / l-class)
+          const buttonComponents = node.querySelectorAll('[component-id][input-type="checkbox"], [component-id][input-type="radio"]');
+          buttonComponents.forEach(comp => {
+            try {
+              const fieldClass = comp.getAttribute('f-class');
+              const labelClass = comp.getAttribute('l-class');
+              if (fieldClass) comp.querySelectorAll(`.${fieldClass}`).forEach(el => el.classList.remove(fieldClass));
+              if (labelClass) comp.querySelectorAll(`.${labelClass}`).forEach(el => el.classList.remove(labelClass));
+              // asegúrate también de limpiar atributo active en sus c-field
+              comp.querySelectorAll('[c-field]').forEach(cf => cf.setAttribute('active','false'));
+            } catch(err){}
+          });
+
+          // Emitir eventos de reinicio para cada componente que exista dentro del nodo
+          const componentsToReset = node.querySelectorAll('[component-id]');
+          componentsToReset.forEach(compEl => {
+            try {
+              const inputType = compEl.getAttribute('input-type') || 'checkbox';
+              const jsonPath = compEl.getAttribute('json-path') || '';
+              const hiddenInput = compEl.querySelector(`input[cf-json-path="${jsonPath}"]`) || compEl.querySelector('input[type="hidden"][cf-json-path]');
+
+              const outDetail = {
+                componentId: compEl.getAttribute('component-id'),
+                jsonPath: hiddenInput ? hiddenInput.getAttribute('cf-json-path') : null,
+                type: inputType,
+                value: null,
+                label: '',
+                id: null,
+                isChecked: false,
+                currentValue: (inputType === 'checkbox') ? [] : {}
+              };
+
+              document.dispatchEvent(new CustomEvent('option-change', { detail: outDetail }));
+              if (inputType === 'checkbox') document.dispatchEvent(new CustomEvent('valid-change-checkbox', { detail: outDetail }));
+              else if (inputType === 'radio') document.dispatchEvent(new CustomEvent('valid-change-radio', { detail: outDetail }));
+            } catch(err){}
+          });
+
+          // Evento final para indicar que el nodo fue procesado
+          document.dispatchEvent(new CustomEvent('clean-on-demand-done', { detail: { componentId, node } }));
+
+        } catch(innerErr) {}
+      });
+
+    } catch (err) {}
+  }
+
+  // Listeners principales
+  document.addEventListener('valid-change-checkbox', handleValidChangeForCleanOnDemand);
+  document.addEventListener('valid-change-radio', handleValidChangeForCleanOnDemand);
+
+  // Trigger manual opcional
+  document.addEventListener('trigger-clean-on-demand', function(ev){
+    if (!ev || !ev.detail || !ev.detail.componentId) return;
+    handleValidChangeForCleanOnDemand({ detail: Object.assign({}, ev.detail, { dependencies: true }) });
+  });
+
+})();
+
+
+</script>

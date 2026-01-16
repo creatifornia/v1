@@ -1,0 +1,196 @@
+<script>
+document.addEventListener('data-ready', onDataReady);
+
+function getCache(key, path) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    const data = JSON.parse(raw);
+    if (!path) return data;
+    return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined) ? acc[part] : undefined, data);
+  } catch (e) {
+    console.warn(`⚠️ Error accediendo a ${key}.${path}`);
+    return undefined;
+  }
+}
+
+function onDataReady(e) {
+  try {
+    // 1) detect language preference (try offices.lang.ISO_639)
+    let lang = getCache('offices', 'lang.ISO_639');
+
+    // 2) normalize to two-letter lower-case if present, else fallback to navigator
+    if (typeof lang === 'string' && lang.trim().length) {
+      lang = lang.trim().toLowerCase().slice(0,2);
+    } else {
+      const nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+      lang = nav.split('-')[0] || 'en';
+    }
+
+    // 3) Available dictionaries (expandable)
+    const CALENDAR_DICTIONARY = {
+       es: {
+    weekday: {
+      monday:    "lunes",
+      tuesday:   "martes",
+      wednesday: "miércoles",
+      thursday:  "jueves",
+      friday:    "viernes",
+      saturday:  "sábado",
+      sunday:    "domingo"
+    },
+    month: {
+      january:   "enero",
+      february:  "febrero",
+      march:     "marzo",
+      april:     "abril",
+      may:       "mayo",
+      june:      "junio",
+      july:      "julio",
+      august:    "agosto",
+      september: "septiembre",
+      october:   "octubre",
+      november:  "noviembre",
+      december:  "diciembre"
+    },
+    preposition: {
+      at:        "a las",       // "a las 18:30"
+      on:        "en",          // "en 2025-10-21"
+      of:        "de",
+      the:       "el",
+      from:      "desde",
+      to:        "hasta",
+      during:    "durante"
+    },
+
+    frequency: {
+      every:     "todos los",   // cambiado por ti
+      each:      "cada",
+      all:       "todos",
+      daily:     "diario",
+      weekly:    "semanal",
+      monthly:   "mensual",
+      yearly:    "anual",
+      starts_on:    "Inicia el",
+      ends_on:    "Finaliza el",
+      not_available_on: "No disponible los días"
+
+    },
+    timeUnits: {
+      hour:      "hora",
+      minute:    "minuto",
+      second:    "segundo"
+    },
+    terms: {
+      today:     "hoy",
+      tomorrow:  "mañana",
+      yesterday: "ayer",
+      weekend:   "fin de semana",
+      weekday:   "día laboral",
+      month:     "mes",
+      year:      "año"
+    },
+    connectors: {
+      and:       "y",
+      or:        "o",
+      every_other: "cada 2",   // ejemplo
+      ordinal_suffix: ""       // placeholder (es no usa suffix tipo 'st'/'nd')
+    },
+    ui: {
+      none: "ninguno",
+      confirm: "Confirmar",
+      reset: "Reiniciar"
+     
+    }
+  },
+
+  en: {
+    weekday: {
+      monday:    "Monday",
+      tuesday:   "Tuesday",
+      wednesday: "Wednesday",
+      thursday:  "Thursday",
+      friday:    "Friday",
+      saturday:  "Saturday",
+      sunday:    "Sunday"
+    },
+    month: {
+      january:   "January",
+      february:  "February",
+      march:     "March",
+      april:     "April",
+      may:       "May",
+      june:      "June",
+      july:      "July",
+      august:    "August",
+      september: "September",
+      october:   "October",
+      november:  "November",
+      december:  "December"
+    },
+    preposition: {
+      at:        "at",
+      on:        "on",
+      of:        "of",
+      the:       "the",
+      from:      "from",
+      to:        "to",
+      during:    "during"
+    },
+    frequency: {
+      every:     "every",
+      each:      "each",
+      all:       "all",
+      daily:     "daily",
+      weekly:    "weekly",
+      monthly:   "monthly",
+      yearly:    "yearly",
+      starts_on: "Starts on",
+      ends_on:   "Ens on",
+      not_available_on: "Not available on"
+    },
+    timeUnits: {
+      hour:      "hour",
+      minute:    "minute",
+      second:    "second"
+    },
+    terms: {
+      today:     "today",
+      tomorrow:  "tomorrow",
+      yesterday: "yesterday",
+      weekend:   "weekend",
+      weekday:   "weekday",
+      month:     "month",
+      year:      "year"
+    },
+    connectors: {
+      and:       "and",
+      or:        "or",
+      every_other: "every 2",
+      ordinal_suffix: "" // english would use 'st', 'nd' etc. if needed later
+    },
+    ui: {
+      none: "none",
+      confirm: "Confirm",
+      reset: "Reset"
+    }
+      }
+    };
+
+    // 4) pick dictionary (fallback to 'en' if not supported)
+    const chosen = CALENDAR_DICTIONARY[lang] ? CALENDAR_DICTIONARY[lang] : CALENDAR_DICTIONARY['en'];
+
+    // 5) persist under localStorage key 'dictionary' path 'schedule'
+    try {
+      const store = { schedule: chosen };
+      localStorage.setItem('dictionary', JSON.stringify(store));
+      document.dispatchEvent(new CustomEvent('dictionary-ready', { detail: { lang } }));
+      console.info(`📚 Dictionary "${lang}"`);
+    } catch (err) {
+      console.warn('[dictionary] could not save to localStorage', err);
+    }
+  } catch (err) {
+    console.error('[dictionary] data-ready handler error', err);
+  }
+  }
+</script>
