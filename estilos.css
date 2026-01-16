@@ -1,49 +1,92 @@
+/* --- 1. ESTILOS DEL SCROLLBAR GLOBAL (.custom-scroll) --- */
+  .custom-scroll {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    /* Esto asegura que la rueda del ratón funcione siempre */
+    -webkit-overflow-scrolling: touch; 
+  }
 
-/* Aplicar a cualquier elemento con la clase .custom-scroll */
-.custom-scroll::-webkit-scrollbar {
-  width: 4px; /* Grosor de la barra */
-  height: 4px; /* Grosor para scroll horizontal */
-}
+  .custom-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
 
-/* ELIMINAR FLECHAS */
-.custom-scroll::-webkit-scrollbar-button {
-  display: none !important;
-  height: 0 !important;
-}
+  .custom-scroll::-webkit-scrollbar-button {
+    display: none !important;
+  }
 
-/* El carril (Track) */
-.custom-scroll::-webkit-scrollbar-track {
-  background: transparent;
-  margin: 10px 0; /* Margen para que no toque los bordes del contenedor */
-}
+  .custom-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 15px 0;
+  }
 
-/* La barra móvil (Thumb) */
-.custom-scroll::-webkit-scrollbar-thumb {
-  background: var(--lavanda, #E6E6FA);
-  border-radius: 10px;
-}
+  .custom-scroll::-webkit-scrollbar-thumb {
+    background: var(--lavanda, #E6E6FA);
+    border-radius: 10px;
+  }
 
-/* Hover en la barra móvil */
-.custom-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--calm, #A3D8E4);
-}
+  /* Efecto: Cuando el usuario interactúa con la barra, activamos el cursor especial */
+  .custom-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--calm, #A3D8E4);
+  }
 
-/* Soporte para Firefox */
-.custom-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--lavanda, #E6E6FA) transparent;
-}
+  /* --- 2. ESTILOS ESPECÍFICOS DE LOS SELECTS --- */
+  .c-select-container {
+    position: relative;
+    width: 100%;
+    overflow: visible !important;
+  }
 
-/* Esto afectará a TODO el proyecto incluyendo el scroll principal */
-body::-webkit-scrollbar {
-  width: 8px; /* Un poco más gruesa para la página principal */
-}
-body::-webkit-scrollbar-track {
-  background: var(--dark, #000000);
-}
-body::-webkit-scrollbar-thumb {
-  background: var(--lavanda, #E6E6FA);
-  border-radius: 20px;
-}
+  .c-options-list {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    width: 100%;
+    background-color: var(--dark, #000000);
+    border: 1px solid var(--lavanda, #E6E6FA);
+    box-sizing: border-box;
+    border-radius: 20px;
+    max-height: 250px;
+    z-index: 999;
+    display: none;
+    opacity: 0;
+    transform: scale(0.98) translateY(-5px);
+    transition: all 0.2s ease;
+  }
 
+  .c-options-list.show {
+    display: block;
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 
+  .c-option {
+    padding: 12px 20px;
+    color: var(--lavanda, #E6E6FA);
+    transition: background 0.15s ease;
+    font-size: 0.95em;
+    cursor: none; /* Para que actúe tu cursor de Webflow */
+  }
+
+  .c-option:hover {
+    background-color: var(--calm, #A3D8E4);
+    color: white !important;
+  }
+
+  .arrow-icon {
+    width: 12px;
+    height: 12px;
+    margin-left: 10px;
+    flex-shrink: 0;
+    color: var(--lavanda, #E6E6FA);
+    transition: transform 0.3s ease;
+  }
+  .active .arrow-icon { transform: rotate(180deg); }
+
+  .c-trigger {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
+    cursor: none;
+  }
