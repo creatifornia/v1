@@ -1,0 +1,406 @@
+<script type="text/javascript">
+/* ------- UTILIDADES (presupone que ya tienes buf2hex, sleep, getDeviceFingerprint, getUserAgent, getCampaignId) ------- */
+// sleep
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+// convertir ArrayBuffer a hex (ya explicado antes)
+function buf2hex(buffer) {
+  return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
+}
+
+function getCampaignId() {
+  const ls = localStorage.getItem('campaign_id');
+  if (ls) return ls;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('campaign_id') || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getDeviceFingerprint() {
+  try {
+    const data = {
+      ua: navigator.userAgent || '',
+      platform: navigator.platform || '',
+      language: navigator.language || '',
+      screen: { w: screen.width, h: screen.height },
+      timezoneOffset: (new Date()).getTimezoneOffset()
+    };
+    const str = JSON.stringify(data);
+    const enc = new TextEncoder().encode(str);
+    const digest = await crypto.subtle.digest('SHA-256', enc);
+    return buf2hex(digest);
+  } catch (e) {
+    return '';
+  }
+}
+
+function getUserAgent() {
+  return navigator.userAgent || '';
+}
+
+/* ------- Helper UI ------- */
+function setSubmitting(btn, isSubmitting = true) {
+  if (!btn) return;
+  if (isSubmitting) {
+    btn.setAttribute('disabled', 'disabled');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.dataset.submitting = 'true';
+  } else {
+    btn.removeAttribute('disabled');
+    btn.removeAttribute('aria-disabled');
+    delete btn.dataset.submitting;
+  }
+}
+
+function hideElement(el) { if (!el) return; el.style.display = 'none'; }
+function showElement(el) { if (!el) return; el.style.display = ''; }
+
+/* Oculta todos los hijos de un form excepto los que se pasan en allow (array de nodes a conservar) */
+function hideAllChildrenExcept(formEl, allow = []) {
+  Array.from(formEl.children).forEach(child => {
+    if (allow.includes(child)) return;
+    child.style.display = 'none';
+  });
+}
+
+/* Restaura la visibilidad por defecto de los hijos del form (quita display inline style) */
+function restoreAllChildren(formEl) {
+  Array.from(formEl.children).forEach(child => {
+    child.style.display = '';
+  });
+}
+
+/* ------- Envío a Xano (igual que antes, con fallback fetch) ------- */
+async function sendToXano(endpointPath, payload) {
+  try {
+    if (typeof xano !== 'undefined') {
+      if (typeof xano.post === 'function') {
+        const sdkResp = await xano.post(endpointPath, payload);
+        return { ok: true, status: 200, body: sdkResp };
+      }
+      if (typeof xano.request === 'function') {
+        const sdkResp = await xano.request({ path: endpointPath, method: 'POST', body: payload });
+        return { ok: true, status: sdkResp.status || 200, body: sdkResp.body || sdkResp };
+      }
+    }
+  } catch (e) {
+    console.warn('Xano SDK failed, falling back to fetch:', e);
+  }
+
+  const base = (typeof xano !== 'undefined' && xano.apiGroupBaseUrl) ? xano.apiGroupBaseUrl : 'https://x8ki-letl-twmt.n7.xano.io/api:wett_tch';
+  const url = base.replace(/\/$/, '') + endpointPath;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    credentials: 'omit'
+  });
+  const body = await resp.json().catch(() => ({}));
+  return { ok: resp.ok, status: resp.status, body };
+}
+
+/* ------- Normalización de respuesta (soporta variantes que mostraste) ------- */
+function normalizeXanoResponse(resp) {
+  // resp = { ok, status, body: ... } (nuestro sendToXano)
+  // Queremos devolver: { ok, status, payload, raw }
+  const raw = resp && resp.body !== undefined ? resp.body : resp;
+  // Si raw tiene una propiedad 'body' que a su vez contiene la data útil, úsala.
+  // (ej. { body: { token:..., profiles:... }, headers:..., status:200 })
+  if (raw && typeof raw === 'object') {
+    if (raw.body && typeof raw.body === 'object' && Object.keys(raw.body).length > 0) {
+      return { ok: !!resp.ok, status: resp.status, payload: raw.body, raw };
+    }
+    // Si raw tiene 'code' (error shape) y payload dentro, devolverlo tal cual.
+    return { ok: !!resp.ok, status: resp.status, payload: raw, raw };
+  }
+  return { ok: !!resp.ok, status: resp.status, payload: {}, raw };
+}
+
+/* ------- Form handling modular (reutilizable) ------- */
+const FormXano = (function () {
+  // selectores y nodes
+  const formRequest = document.querySelector('form[custom-form="request"]');
+  const formVerify  = document.querySelector('form[custom-form="verify"]');
+  const blockVerify = document.querySelector('[form-block="verify"]');
+  const blockRequest = document.querySelector('[form-block="request"]');
+
+  const btnRequest = formRequest ? formRequest.querySelector('[submit-request], #submit-request, [data-submit-request]') : null;
+  const btnVerify  = formVerify  ? formVerify.querySelector('[submit-verify], #submit-verify, [data-submit-verify]') : null;
+
+  const inputEmailRequest = formRequest ? formRequest.querySelector('[email], input[name="email"], #email') : null;
+  // NOTE: ya no usamos inputEmailVerify; usamos el email del request
+  const inputCodeVerify = formVerify ? formVerify.querySelector('[code], input[name="code"], #code') : null;
+
+  // error divs dentro de formVerify: buscamos por atributo exacto, p.e. [ERROR_CODE_INPUT_ERROR], [TOO_MANY_REQUESTS]
+  function getErrorDiv(code) {
+  if (!formVerify) return null;
+  return formVerify.querySelector(`[data-error="${code}"]`);
+  }
+
+    // Muestra el div de error específico y oculta el resto del formVerify
+  function showSpecificError(code, payload) {
+    if (!formVerify) return;
+    // ocultar success si existe
+    const successEl = formVerify.querySelector('[success]');
+    if (successEl) successEl.style.display = 'none';
+
+    // ocultar cualquier otro error 'genérico' que pueda existir
+    const genericError = formVerify.querySelector('[error]');
+    if (genericError) genericError.style.display = 'none';
+
+    // obtener div objetivo
+    const target = getErrorDiv(code);
+    if (target) {
+      hideAllChildrenExcept(formVerify, [target]); // deja visible sólo ese div
+      showElement(target);
+      // si es ERROR_CODE_INPUT_ERROR, busca [restore] dentro de ese div y asocia listener
+      if (code === 'ERROR_CODE_INPUT_ERROR') {
+        const restoreBtn = target.querySelector('[restore]');
+        if (restoreBtn) {
+          // remover listener previo si existe para evitar duplicados
+          restoreBtn.removeEventListener('click', restoreVerifyForm);
+          restoreBtn.addEventListener('click', restoreVerifyForm);
+        }
+      }
+    } else {
+      // si no hay div específico, mostramos el error genérico
+      if (genericError) {
+        hideAllChildrenExcept(formVerify, [genericError]);
+        showElement(genericError);
+      }
+    }
+    // dejar el submit deshabilitado hasta que el usuario restaure o intente de nuevo
+    setSubmitting(btnVerify, true);
+  }
+
+  // Restaura el formulario de verify para reingresar código (oculta todos los errores)
+  function restoreVerifyForm(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (!formVerify) return;
+    // ocultar todos los divs de error específicos (si los hay)
+    const errorDivs = Array.from(formVerify.querySelectorAll('[ERROR_CODE_INPUT_ERROR], [ERROR_CODE_ACCESS_DENIED], [TOO_MANY_REQUESTS]'));
+    errorDivs.forEach(d => { hideElement(d); });
+    // ocultar generic error
+    const genericError = formVerify.querySelector('[error]');
+    if (genericError) hideElement(genericError);
+    // ocultar success
+    const successEl = formVerify.querySelector('[success]');
+    if (successEl) hideElement(successEl);
+    // restaurar inputs y botones
+    restoreAllChildren(formVerify);
+    // re-enable submit so user can type code and resend
+    setSubmitting(btnVerify, false);
+    // focus al input de código si existe
+    if (inputCodeVerify) inputCodeVerify.focus();
+  }
+
+  // Manejo de submit request (igual que antes; lo mantenemos simple)
+  async function handleRequestSubmit(e) {
+    e.preventDefault();
+    if (!formRequest) return;
+    setSubmitting(btnRequest, true);
+    const email = inputEmailRequest ? (inputEmailRequest.value || '').trim() : '';
+    const payload = {
+      email,
+      type: 'request_code',
+      id: getCampaignId() || undefined,
+      scope: 'personal',
+      auth_method: 'otp',
+      device_fingerprint: await getDeviceFingerprint(),
+      user_agent: getUserAgent()
+    };
+    try {
+      const resp = await sendToXano('/auth_v1/request_code', payload);
+      if (resp.ok && (resp.status === 200 || (resp.body && resp.body.success))) {
+        // mostrar success nativo del formulario
+        const successEl = formRequest.querySelector('[success]');
+        const errorEl = formRequest.querySelector('[error]');
+        Array.from(formRequest.children).forEach(child => {
+          if (child === successEl || child === errorEl) return;
+          child.style.display = 'none';
+        });
+        if (successEl) successEl.style.display = '';
+        if (errorEl) errorEl.style.display = 'none';
+        // mostrar bloque verify
+        if (blockVerify) blockVerify.classList.remove('hide');
+      } else {
+        // mostrar error nativo del formRequest
+        const successEl = formRequest.querySelector('[success]');
+        const errorEl = formRequest.querySelector('[error]');
+        if (successEl) successEl.style.display = 'none';
+        if (errorEl) errorEl.style.display = '';
+        console.error('Request code error', resp);
+        setSubmitting(btnRequest, false);
+      }
+    } catch (err) {
+      console.error('Request code exception', err);
+      const errorEl = formRequest.querySelector('[error]');
+      if (errorEl) { errorEl.style.display = ''; }
+      setSubmitting(btnRequest, false);
+    }
+  }
+
+  // Manejo de submit verify (actualizado según tu lógica)
+  async function handleVerifySubmit(e) {
+    e.preventDefault();
+    if (!formVerify) return;
+    setSubmitting(btnVerify, true);
+
+    const email = inputEmailRequest ? (inputEmailRequest.value || '').trim() : '';
+    const code  = inputCodeVerify ? (inputCodeVerify.value || '').trim() : '';
+
+    const payload = {
+      email,
+      code,
+      type: 'verify_code',
+      id: getCampaignId() || undefined,
+      scope: 'personal',
+      auth_method: 'otp',
+      device_fingerprint: await getDeviceFingerprint(),
+      user_agent: getUserAgent()
+    };
+
+    try {
+      const resp = await sendToXano('/auth_v1/verify_code', payload);
+
+      // LOGGING detallado solo para verify
+      console.group('[XANO VERIFY RESPONSE]');
+      console.log('HTTP status:', resp.status);
+      console.log('resp.ok:', resp.ok);
+      console.log('Raw body:', resp.body);
+      console.log('Body keys:', resp.body && typeof resp.body === 'object' ? Object.keys(resp.body) : null);
+      console.groupEnd();
+
+      const norm = normalizeXanoResponse(resp);
+      // norm.payload = objeto final (puede contener token/profiles/redirect_url) o en caso de error contiene {code,message,payload}
+      if (!norm.ok) {
+        // resp.ok === false -> manejos según error code esperado
+        const errPayload = norm.payload || {};
+        const errCode = errPayload.code || errPayload.error || null;
+
+        // Mapear a comportamientos requeridos
+        if (errCode === 'ERROR_CODE_INPUT_ERROR') {
+          // mostrar div con atributo ERROR_CODE_INPUT_ERROR (ocultar inputs)
+          showSpecificError('ERROR_CODE_INPUT_ERROR', errPayload.payload || errPayload);
+          return;
+        }
+
+        if (errCode === 'ERROR_CODE_ACCESS_DENIED') {
+          // redirigir a payload.redirect_url (si existe)
+          const possible = errPayload.payload || errPayload;
+          // caso 1: payload es objeto con redirect_url
+          if (possible && typeof possible === 'object' && possible.redirect_url) {
+            window.location.href = possible.redirect_url;
+            return;
+          }
+          // caso 2: errorPayload.redirect_url directo
+          if (errPayload.redirect_url) {
+            window.location.href = errPayload.redirect_url;
+            return;
+          }
+          // fallback: mostrar generic error
+          const genericError = formVerify.querySelector('[error]');
+          if (genericError) {
+            hideAllChildrenExcept(formVerify, [genericError]);
+            showElement(genericError);
+          }
+          setSubmitting(btnVerify, false);
+          return;
+        }
+
+        if (errCode === 'TOO_MANY_REQUESTS' || errCode === 'ERROR_CODE_TOO_MANY_REQUESTS') {
+          // mostrar div con atributo TOO_MANY_REQUESTS
+          showSpecificError('TOO_MANY_REQUESTS', errPayload.payload || errPayload);
+          return;
+        }
+
+        // Si llega aquí: error no esperado -> mostrar generic error
+        const genericError = formVerify.querySelector('[error]');
+        if (genericError) {
+          hideAllChildrenExcept(formVerify, [genericError]);
+          showElement(genericError);
+        }
+        setSubmitting(btnVerify, false);
+        return;
+      }
+
+      // Si llegamos aquí, norm.ok === true (status 200). Extraer payload útil
+      const body = norm.payload || {};
+
+      // Mostrar success nativo del formVerify
+      const successEl = formVerify.querySelector('[success]');
+      const errorEl = formVerify.querySelector('[error]');
+      if (successEl) successEl.style.display = '';
+      if (errorEl) errorEl.style.display = 'none';
+      // ocultar inputs para simular comportamiento nativo
+      Array.from(formVerify.children).forEach(child => {
+        if (child === successEl || child === errorEl) return;
+        child.style.display = 'none';
+      });
+
+      // Guardar profiles si existen
+      if (body.profiles) {
+        try {
+          localStorage.setItem('profiles', JSON.stringify(body.profiles));
+        } catch (e) { console.warn('No se pudo guardar profiles', e); }
+        await sleep(200);
+      }
+      if (body.token) {
+        try {
+          localStorage.setItem('AuthToken', body.token);
+        } catch (e) { console.warn('No se pudo guardar AuthToken', e); }
+        await sleep(200);
+      }
+ 
+      // Redirigir si viene redirect_url
+      if (body.redirect_url) {
+        await sleep(200);
+        window.location.href = body.redirect_url;
+        return;
+      }
+
+      // Si no hay redirect, dejar success visible; no re-habilitamos submit (comportamiento nativo)
+    } catch (err) {
+      console.error('Verify code exception', err);
+      // mostrar generic error
+      const genericError = formVerify.querySelector('[error]');
+      if (genericError) {
+        hideAllChildrenExcept(formVerify, [genericError]);
+        showElement(genericError);
+      }
+      setSubmitting(btnVerify, false);
+    } finally {
+      // Si success no visible, habilitar botón para reintento
+      const successVisible = !!formVerify.querySelector('[success]') && getComputedStyle(formVerify.querySelector('[success]')).display !== 'none';
+      if (!successVisible) setSubmitting(btnVerify, false);
+    }
+  }
+
+  // Public init
+  function init() {
+    if (!formRequest || !formVerify) {
+      console.warn('FormXano init: no se encontraron ambos formularios (request/verify).');
+      return;
+    }
+    formRequest.addEventListener('submit', handleRequestSubmit);
+    formVerify.addEventListener('submit', handleVerifySubmit);
+    // Asegura que si el formVerify contiene divs de error inicialmente ocultos, queden ocultos
+    ['ERROR_CODE_INPUT_ERROR','ERROR_CODE_ACCESS_DENIED','TOO_MANY_REQUESTS'].forEach(code => {
+      const d = getErrorDiv(code);
+      if (d) d.style.display = 'none';
+    });
+  }
+
+  return { init, _internals: { getErrorDiv } };
+})();
+
+/* Inicializa cuando DOM listo (si el script va al final del body esto no es necesario) */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => FormXano.init());
+} else {
+  FormXano.init();
+}
+</script>

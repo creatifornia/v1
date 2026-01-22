@@ -1,0 +1,187 @@
+<style>
+  #message_modal {
+    display: none;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+
+  #message_modal.show {
+    display: flex;
+    animation: mm-in 360ms cubic-bezier(.22,.9,.35,1) both;
+  }
+
+  #message_modal.hiding {
+    animation: mm-out 240ms ease both;
+  }
+
+  @keyframes mm-in {
+    0%   { opacity: 0; transform: translateY(-10px) scale(.98); }
+    70%  { opacity: 1; transform: translateY(3px)  scale(1.02); }
+    100% { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  @keyframes mm-out {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #message_modal .inner {
+    transition: transform 200ms ease, opacity 200ms ease;
+  }
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  const MODAL_ID = 'message_modal';
+  const MESSAGE_ID = 'message';
+  const AUTO_HIDE_MS = 7000;
+  const OUT_ANIM_MS = 240; 
+
+  let hideTimer = null;
+
+  // --- Helpers Internos ---
+  function safeJSONParse(str) {
+    try { return JSON.parse(str); } catch { return null; }
+  }
+
+  function getNested(obj, path) {
+    if (!obj || !path) return undefined;
+    return String(path).split('.').reduce((acc, p) => (acc && acc[p] !== undefined) ? acc[p] : undefined, obj);
+  }
+
+function resolveMessageFromDynamic(path) {
+    if (!path) return undefined;
+    
+    const parts = String(path).split('.');
+    const rootKey = parts[0]; // ej: "errors"
+    const remainingPath = parts.slice(1).join('.'); // ej: "generic"
+
+    // 1. Intentar buscar como clave directa en LocalStorage
+    // Esto sirve para: localStorage.getItem('errors') -> { "generic": "..." }
+    const rawRoot = localStorage.getItem(rootKey);
+    if (rawRoot) {
+      const parsedRoot = safeJSONParse(rawRoot);
+      // Si el root es un string directo (sin puntos), lo devolvemos
+      if (parts.length === 1 && typeof parsedRoot === 'string') return parsedRoot;
+      // Si hay un path restante, navegamos dentro del objeto
+      if (remainingPath && typeof parsedRoot === 'object') {
+        const found = getNested(parsedRoot, remainingPath);
+        if (found) return found;
+      }
+    }
+
+    // 2. Fallback: Buscar dentro de la clave global 'dynamic'
+    // Esto sirve para: localStorage.getItem('dynamic') -> { "errors": { "generic": "..." } }
+    const rawDynamic = localStorage.getItem('dynamic');
+    if (rawDynamic) {
+      const dyn = safeJSONParse(rawDynamic);
+      return getNested(dyn, path);
+    }
+
+    return undefined;
+  }
+  // --- Motor de Visibilidad ---
+  function showMessage(text) {
+    if (!text) return;
+    const modal = document.getElementById(MODAL_ID);
+    const msgEl = document.getElementById(MESSAGE_ID);
+    if (!modal || !msgEl) return;
+
+    msgEl.textContent = String(text);
+
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+    modal.classList.remove('hiding');
+    modal.style.display = 'flex';
+    
+    requestAnimationFrame(() => {
+      modal.classList.add('show');
+    });
+
+    hideTimer = setTimeout(() => hideMessage(), AUTO_HIDE_MS);
+  }
+
+  function hideMessage() {
+    const modal = document.getElementById(MODAL_ID);
+    if (!modal) return;
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+    modal.classList.remove('show');
+    modal.classList.add('hiding');
+
+    setTimeout(() => {
+      try {
+        modal.style.display = 'none';
+        modal.classList.remove('hiding');
+      } catch(e){}
+    }, OUT_ANIM_MS + 20);
+  }
+
+  // --- Manejo de URL ---
+  function handleQueryParams() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      let textToShow = null;
+
+      // 1. Prioridad: Mensaje Crudo (?message=Hola Mundo)
+      const rawMsg = params.get('message');
+      if (rawMsg) {
+        textToShow = rawMsg;
+      } 
+      // 2. Mensaje Dinámico (?dynamic-message=success.update)
+      else {
+        const dynKey = params.get('dynamic-message');
+        if (dynKey) {
+          textToShow = resolveMessageFromDynamic(dynKey);
+        }
+      }
+
+      if (textToShow) showMessage(textToShow);
+
+      // Limpieza impecable de la URL
+      if (params.has('message') || params.has('dynamic-message')) {
+        params.delete('message');
+        params.delete('dynamic-message');
+        const newSearch = params.toString();
+        const cleanUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
+        history.replaceState({}, '', cleanUrl);
+      }
+    } catch(e) { console.error('[Modal] URL Error:', e); }
+  }
+
+  // --- Inicialización y Eventos ---
+  function init() {
+    const modal = document.getElementById(MODAL_ID);
+    if (modal) {
+      modal.addEventListener('click', () => hideMessage());
+    }
+    handleQueryParams();
+  }
+
+  // Evento 1: Mensaje Dinámico (Lookup en LocalStorage)
+  document.addEventListener('dynamic_message', (e) => {
+    const key = (e.detail && typeof e.detail === 'object') ? e.detail.key : e.detail;
+    const text = resolveMessageFromDynamic(key);
+    if (text) showMessage(text);
+  });
+
+  // Evento 2: Mensaje Crudo (Texto directo)
+  document.addEventListener('message', (e) => {
+    const text = (e.detail && typeof e.detail === 'object') ? e.detail.text : e.detail;
+    if (text) showMessage(text);
+  });
+
+  // DOM Ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // API Pública para debug
+  window.__SvetlanaModal = { showMessage, hideMessage };
+
+})();
+</script>
