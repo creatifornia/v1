@@ -1,3 +1,28 @@
+
+/* --- HIDE: Ocultación absoluta e inapelable --- */
+/* Bloquea display, visibilidad y espacio en el layout */
+.hide {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* --- INUTIL: Bloqueo de interacción total --- */
+/* Se aplica tanto a la clase manual como al atributo de seguridad del script */
+.inutil, 
+[data-api-locked="true"] {
+    pointer-events: none !important; /* Desactiva Clicks, Hovers y Focus */
+    cursor: not-allowed !important;   /* Indica visualmente el bloqueo */
+    user-select: none !important;    /* Evita que se pueda seleccionar el texto */
+}
+
+/* --- RESET DE EVENTOS --- */
+/* Asegura que ningún hijo del elemento bloqueado pueda reactivar eventos */
+.inutil *, 
+[data-api-locked="true"] * {
+    pointer-events: none !important;
+}
+
 /* --- 1. ESTILOS DEL SCROLLBAR GLOBAL (.custom-scroll) --- */
   .custom-scroll {
     overflow-y: auto !important;
