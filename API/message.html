@@ -1,0 +1,190 @@
+<style>
+  #message_modal {
+    display: none;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+
+  #message_modal.show {
+    display: flex;
+    animation: mm-in 360ms cubic-bezier(.22,.9,.35,1) both;
+  }
+
+  #message_modal.hiding {
+    animation: mm-out 240ms ease both;
+  }
+
+  @keyframes mm-in {
+    0%   { opacity: 0; transform: translateY(-10px) scale(.98); }
+    70%  { opacity: 1; transform: translateY(3px)  scale(1.02); }
+    100% { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  @keyframes mm-out {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #message_modal .inner {
+    transition: transform 200ms ease, opacity 200ms ease;
+  }
+</style>
+
+<script>
+
+/* MODO DE USO / EJEMPLOS:
+     
+     1. Vía URL (Params):
+        ?message=Hola+Mundo&auto_hide=3000
+        ?message=Bienvenido&path=dynamic.welcome&auto_hide=5000
+
+     2. Vía Eventos JS:
+        document.dispatchEvent(new CustomEvent('message', { 
+          detail: { 
+            message: "Hola (Default)", 
+            path: "errors.login_fail", 
+            auto_hide: 5000 
+          } 
+        }));
+  */
+
+(function(){
+  'use strict';
+
+  // --- CONFIGURACIÓN ---
+  const MODAL_ID = 'message_modal';
+  const MESSAGE_ID = 'message';
+  const DEFAULT_AUTO_HIDE_MS = 7000;
+  const OUT_ANIM_MS = 240; 
+  const DEFAULT_LANG = 'es';
+  const DYNAMIC_KEY = 'dynamic'; // Key única en LocalStorage
+
+  let hideTimer = null;
+
+  // --- HELPERS INTERNOS ---
+  function safeJSONParse(str) {
+    try { return JSON.parse(str); } catch { return null; }
+  }
+
+  function resolveMessageFromDynamic(path) {
+    if (!path) return undefined;
+    
+    // Obtenemos el objeto 'dynamic' de LocalStorage
+    const rawDynamic = localStorage.getItem(DYNAMIC_KEY);
+    if (!rawDynamic) return undefined;
+
+    const dynObj = safeJSONParse(rawDynamic);
+    if (!dynObj || typeof dynObj !== 'object') return undefined;
+
+    // Buscamos la clave directamente (ej: dynObj["auth.too_many"])
+    return dynObj[path];
+  }
+
+  // --- LÓGICA DE DECISIÓN DE MENSAJE ---
+  function determineFinalText(message, path) {
+    const currentLang = localStorage.getItem('lang');
+
+    // REGLA: Si no hay path, o lang es base/nulo -> Mensaje directo
+    if (!path || !currentLang || currentLang === DEFAULT_LANG) {
+      return message;
+    }
+
+    // Intentar traducción
+    const dynamicText = resolveMessageFromDynamic(path);
+    return dynamicText || message;
+  }
+
+  // --- MOTOR DE VISIBILIDAD ---
+  function showMessage(text, duration) {
+    if (!text) return;
+    const modal = document.getElementById(MODAL_ID);
+    const msgEl = document.getElementById(MESSAGE_ID);
+    if (!modal || !msgEl) return;
+
+    msgEl.textContent = String(text);
+
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+    modal.classList.remove('hiding');
+    modal.style.display = 'flex';
+    
+    requestAnimationFrame(() => {
+      modal.classList.add('show');
+    });
+
+    const hideTime = duration && !isNaN(duration) ? Number(duration) : DEFAULT_AUTO_HIDE_MS;
+    hideTimer = setTimeout(() => hideMessage(), hideTime);
+  }
+
+  function hideMessage() {
+    const modal = document.getElementById(MODAL_ID);
+    if (!modal) return;
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+    modal.classList.remove('show');
+    modal.classList.add('hiding');
+
+    setTimeout(() => {
+      try {
+        modal.style.display = 'none';
+        modal.classList.remove('hiding');
+      } catch(e){}
+    }, OUT_ANIM_MS + 20);
+  }
+
+  // --- MANEJO DE URL ---
+  function handleQueryParams() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const msgParam = params.get('message');
+      const pathParam = params.get('path');
+      const hideParam = params.get('auto_hide');
+
+      if (msgParam || pathParam) {
+        const finalText = determineFinalText(msgParam, pathParam);
+        if (finalText) showMessage(finalText, hideParam);
+      }
+
+      // Limpieza de URL
+      if (params.has('message') || params.has('path') || params.has('auto_hide')) {
+        params.delete('message');
+        params.delete('path');
+        params.delete('auto_hide');
+        const newSearch = params.toString();
+        const cleanUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
+        history.replaceState({}, '', cleanUrl);
+      }
+    } catch(e) { console.error('[Modal] URL Error:', e); }
+  }
+
+  // --- INICIALIZACIÓN Y EVENTOS ---
+  function init() {
+    const modal = document.getElementById(MODAL_ID);
+    if (modal) {
+      modal.addEventListener('click', () => hideMessage());
+    }
+    handleQueryParams();
+  }
+
+  // Escucha del evento 'message'
+  document.addEventListener('message', (e) => {
+    const data = e.detail || {};
+    
+    const baseMsg = (typeof data === 'object') ? data.message || data.text : data;
+    const path = data.path || null;
+    const autoHide = data.auto_hide || null;
+
+    const finalText = determineFinalText(baseMsg, path);
+    if (finalText) showMessage(finalText, autoHide);
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  window.__SvetlanaModal = { showMessage, hideMessage };
+
+})();
+</script>

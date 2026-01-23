@@ -115,3 +115,36 @@
     box-sizing: border-box;
     cursor: none;
   }
+
+  /* MESSAGE_MODAL_BEGIN */
+  
+  #message_modal {
+    display: none;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+
+  #message_modal.show {
+    display: flex;
+    animation: mm-in 360ms cubic-bezier(.22,.9,.35,1) both;
+  }
+
+  #message_modal.hiding {
+    animation: mm-out 240ms ease both;
+  }
+
+  @keyframes mm-in {
+    0%   { opacity: 0; transform: translateY(-10px) scale(.98); }
+    70%  { opacity: 1; transform: translateY(3px)  scale(1.02); }
+    100% { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  @keyframes mm-out {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #message_modal .inner {
+    transition: transform 200ms ease, opacity 200ms ease;
+  }
+  /***************END***************/

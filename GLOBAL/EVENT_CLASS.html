@@ -1,0 +1,65 @@
+<script>
+(function() {
+  'use strict';
+
+  /**
+   * GUÍA DE USO - EVENTO "class"
+     ACTION ESPERADA:
+     {
+  type: "new_event",
+  data: {
+    name: "class",
+    details: {
+      behavior: "add", 
+      class: "hide, inutil",
+      find_by_id: "portal_email",
+      find_by_attributes: [
+        {
+          name: "api-trigger",
+          value: "login_btn"
+        },
+        {
+          name: "data-status",
+          value: "" 
+        }
+      ]
+    }
+  }
+}
+   */
+
+  document.addEventListener('class', (e) => {
+    const d = e.detail || {};
+    let target = null;
+
+    // --- 1. LOCALIZACIÓN ---
+    if (d.find_by_id && d.find_by_id.trim() !== "") {
+      // Prioridad 1: ID
+      target = document.getElementById(d.find_by_id);
+    } 
+    else if (Array.isArray(d.find_by_attributes) && d.find_by_attributes.length > 0) {
+      // Prioridad 2: Lista de atributos (concatenados)
+      const selector = d.find_by_attributes
+        .map(a => a.value ? `[${a.name}="${a.value}"]` : `[${a.name}]`)
+        .join('');
+      target = document.querySelector(selector);
+    }
+
+    if (!target) return; // Salida silenciosa si no hay match
+
+    // --- 2. CLASES Y COMPORTAMIENTO ---
+    if (!d.class) return;
+
+    const classList = d.class.split(',')
+      .map(c => c.trim())
+      .filter(c => c !== "");
+
+    const isAdd = (d.behavior !== 'remove'); // Por defecto es 'add'
+
+    classList.forEach(cls => {
+      isAdd ? target.classList.add(cls) : target.classList.remove(cls);
+    });
+
+  });
+})();
+</script>

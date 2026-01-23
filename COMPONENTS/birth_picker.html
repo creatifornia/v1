@@ -1,0 +1,180 @@
+<style>
+  /* --- CONTENEDOR DE CADA SELECT INDIVIDUAL --- */
+  .c-select-container {
+    position: relative;
+    /* Esto asegura que la caja de opciones se base en el ancho de este div */
+    width: 100%; 
+    overflow: visible !important;
+  }
+
+  /* --- CAJA DE OPCIONES (WIDTH CORREGIDO) --- */
+  .c-options-list {
+    position: absolute;
+    top: calc(100% + 5px); 
+    left: 0;
+    /* Cambiado de right:0 a width:100% para respetar el ancho del select */
+    width: 100%; 
+    background-color: var(--modal-bg-color); 
+    border: 1px solid var(--lavanda);
+    box-sizing: border-box; 
+    border-radius: 20px; 
+    max-height: 250px; 
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 999;
+    display: none;
+    opacity: 0;
+    transform: scale(0.98) translateY(-5px);
+    transition: all 0.2s ease;
+  }
+
+  .c-options-list.show {
+    display: block;
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  /* --- OPCIONES --- */
+  .c-option {
+    padding: 12px 20px;
+    color: var(--lavanda);
+    transition: background 0.15s ease;
+    font-size: 0.95em;
+    white-space: nowrap;
+  }
+
+  .c-option:hover {
+    background-color: var(--calm);
+    color: white !important;
+  }
+
+  /* --- SCROLLBAR (SIN FLECHAS) --- */
+  .c-options-list::-webkit-scrollbar { width: 4px; }
+  .c-options-list::-webkit-scrollbar-button { display: none !important; }
+  .c-options-list::-webkit-scrollbar-track { background: transparent; margin: 15px 0; }
+  .c-options-list::-webkit-scrollbar-thumb { background: var(--lavanda); border-radius: 10px; }
+
+  /* --- FLECHA --- */
+  .arrow-icon {
+    width: 12px;
+    height: 12px;
+    margin-left: 10px;
+    flex-shrink: 0;
+    color: var(--lavanda);
+    transition: transform 0.3s ease;
+  }
+  .active .arrow-icon { transform: rotate(180deg); }
+
+  .c-trigger {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
+  }
+</style>
+
+<div class="birth-wrapper">
+  <div class="c-select-container">
+    <div class="input birth day hover-cursor c-trigger" data-target="day">
+      <span class="curr-value">Día</span>
+      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+    <div class="c-options-list modal-bg-color" id="list-day"></div>
+    <input type="text" name="day" day required api-input data-required style="position:absolute; opacity:0; height:0; width:0; pointer-events:none;">
+
+  </div>
+
+  <div class="c-select-container">
+    <div class="input birth month hover-cursor c-trigger" data-target="month">
+      <span class="curr-value">Mes</span>
+      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+    <div class="c-options-list modal-bg-color" id="list-month"></div>
+    <input type="text" name="month" month required api-input data-required style="position:absolute; opacity:0; height:0; width:0; pointer-events:none;">
+  </div>
+
+  <div class="c-select-container">
+    <div class="input birth year hover-cursor c-trigger" data-target="year">
+      <span class="curr-value">Año</span>
+      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+    <div class="c-options-list modal-bg-color" id="list-year"></div>
+    <input type="text" name="year" year required api-input data-required style="position:absolute; opacity:0; height:0; width:0; pointer-events:none;">
+  </div>
+</div>
+
+<script>
+(function() {
+  const dictionary = {
+    es: { day: "Día", month: "Mes", year: "Año", months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"] },
+    en: { day: "Day", month: "Month", year: "Year", months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] },
+    fr: { day: "Jour", month: "Mois", year: "An", months: ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"] },
+    pt: { day: "Dia", month: "Mês", year: "Ano", months: ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubre", "Novembro", "Dezembro"] }
+  };
+
+  setTimeout(() => {
+    const lang = localStorage.getItem('lang') || 'es';
+    const content = dictionary[lang] || dictionary['en'];
+
+    const populate = (el, data, isM) => {
+      el.innerHTML = '';
+      data.forEach((item, i) => {
+        const d = document.createElement('div');
+        d.className = 'c-option hover-cursor';
+        const val = isM ? (i + 1).toString().padStart(2, '0') : item;
+        d.textContent = item;
+        d.onclick = (e) => {
+          e.stopPropagation();
+          const p = el.closest('.c-select-container');
+          p.querySelector('.curr-value').textContent = item;
+          p.querySelector('input').value = val;
+          el.classList.remove('show');
+          p.classList.remove('active');
+          if(el.id !== 'list-day') updateDays();
+        };
+        el.appendChild(d);
+      });
+    };
+
+    const updateDays = () => {
+      const mInput = document.querySelector('input[month]');
+      const yInput = document.querySelector('input[year]');
+      const m = mInput ? mInput.value : "";
+      const y = (yInput && yInput.value) ? yInput.value : new Date().getFullYear();
+      
+      // Si no hay mes, inyectamos 31 días por defecto
+      let dCount = m ? new Date(y, m, 0).getDate() : 31;
+      const dArray = Array.from({length: dCount}, (_, i) => (i+1).toString().padStart(2, '0'));
+      populate(document.getElementById('list-day'), dArray);
+      
+      if(window.Webflow) window.Webflow.require('ix2').init();
+    };
+
+    // Inicialización de listas
+    populate(document.getElementById('list-month'), content.months, true);
+    populate(document.getElementById('list-year'), Array.from({length: 101}, (_, i) => new Date().getFullYear() - i));
+    updateDays(); // Inyectar días inicialmente
+
+    // Eventos de apertura
+    document.querySelectorAll('.c-trigger').forEach(t => {
+      t.onclick = (e) => {
+        e.stopPropagation();
+        const list = t.nextElementSibling;
+        const p = t.parentElement;
+        document.querySelectorAll('.c-options-list').forEach(l => l !== list && l.classList.remove('show'));
+        document.querySelectorAll('.c-select-container').forEach(c => c !== p && c.classList.remove('active'));
+        list.classList.toggle('show');
+        p.classList.toggle('active');
+      };
+    });
+
+    document.onclick = () => {
+      document.querySelectorAll('.c-options-list').forEach(l => l.classList.remove('show'));
+      document.querySelectorAll('.c-select-container').forEach(c => c.classList.remove('active'));
+    };
+
+    if(window.Webflow) window.Webflow.require('ix2').init();
+  }, 100);
+})();
+</script>

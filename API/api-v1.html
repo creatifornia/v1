@@ -1,0 +1,401 @@
+<script>
+(function () {
+  'use strict';
+
+  // --- CONFIGURACIÓN ---
+  const NAMESPACE = 'creatifornia';
+  const TOKEN_KEY = 'AuthToken';
+  const CSS_INUTIL = 'inutil';
+  const CSS_HIDE = 'hide';
+  const AUTH_REDIRECT = 'https://www.creatifornia.com/auth/access';
+  const EVENT_REQUEST_NAME = 'api-request'; // Nombre del evento para invocar api desde scripts
+
+  // --- HELPERS ---
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+  // Helper para guardar en storage con soporte para "profile.email"
+  const setDeepStorage = (keyPath, value) => {
+    const keys = keyPath.split('.');
+    const rootKey = keys.shift();
+    
+    // Si es llave simple
+    if (keys.length === 0) {
+      localStorage.setItem(rootKey, typeof value === 'object' ? JSON.stringify(value) : value);
+      return;
+    }
+    
+    // Si es anidado, leemos, parseamos y actualizamos
+    let item = {};
+    try {
+      const stored = localStorage.getItem(rootKey);
+      if (stored) item = JSON.parse(stored);
+    } catch (e) { console.warn('Error parsing storage for update', e); }
+
+    let current = item;
+    while (keys.length > 1) {
+      const k = keys.shift();
+      current[k] = current[k] || {};
+      current = current[k];
+    }
+    current[keys[0]] = value;
+    localStorage.setItem(rootKey, JSON.stringify(item));
+  };
+
+  const _h = {
+    q: (sel, root = document) => root.querySelector(sel),
+    qa: (sel, root = document) => Array.from(root.querySelectorAll(sel)),
+    
+    getFingerprint: async () => {
+      const msg = navigator.userAgent + (screen.width * screen.height);
+      const msgUint8 = new TextEncoder().encode(msg);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    },
+
+    normalizeEndpoint: (ep) => ep.startsWith('/') ? ep.substring(1) : ep,
+
+
+    // Extrae todos los atributos de un elemento HTML para enviarlos como payload
+    getAttributesAsObj: (el) => {
+      if (!el || !el.attributes) return {};
+      const obj = {};
+      Array.from(el.attributes).forEach(attr => {
+        obj[attr.name] = attr.value;
+      });
+      return obj;
+    }
+  };
+
+  // --- MOTOR DE LLAMADAS API ---
+  async function sendToXano(endpointPath, payload, method = 'POST') {
+    // 1. Intentar con SDK
+    try {
+      if (typeof window.xano !== 'undefined') {
+        const sdkMethod = method.toLowerCase();
+        if (typeof window.xano[sdkMethod] === 'function') {
+          const sdkResp = await window.xano[sdkMethod](endpointPath, payload);
+          return { ok: true, status: 200, body: sdkResp.body || sdkResp };
+        }
+      }
+    } catch (e) {
+      if (e.status) return { ok: false, status: e.status, body: e.response?.data || e };
+    }
+
+    // 2. Fallback a Fetch
+    const base = (window.xano && window.xano.apiGroupBaseUrl) ? window.xano.apiGroupBaseUrl : 'https://x8ki-letl-twmt.n7.xano.io/api:wett_tch';
+    const url = base.replace(/\/$/, '') + (endpointPath.startsWith('/') ? endpointPath : '/' + endpointPath);
+    
+    try {
+      const resp = await fetch(url, {
+        method: method.toUpperCase(),
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem(TOKEN_KEY) ? { 'Authorization': `Bearer ${localStorage.getItem(TOKEN_KEY)}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const body = await resp.json().catch(() => ({}));
+      return { ok: resp.ok, status: resp.status, body };
+    } catch (err) {
+      return { ok: false, status: 'ERROR', body: err };
+    }
+  }
+
+  // --- LIBRERÍA DE ACCIONES (Respuesta Exitosa) ---
+  const actionHandlers = {
+    set_storage: (data) => {
+      if (data.key && data.value !== undefined) setDeepStorage(data.key, data.value);
+    },
+    
+    new_event: (data) => {
+      if (!data.name) return;
+      document.dispatchEvent(new CustomEvent(data.name, { detail: data.details || {} }));
+    },
+
+    redirect_url: async (data) => {
+      if (!data.url) return;
+      window.location.href = data.url;
+    },
+
+    sleep: async (data) => {
+      if (data.ms) await sleep(Number(data.ms));
+    },
+
+    unlock: (data, context) => {
+      // Invocamos la función de desbloqueo del engine
+      if (context && typeof context.unlockUI === 'function') {
+        context.unlockUI();
+      }
+    }
+  };
+
+  const apiEngine = {
+    // Lógica visual de bloqueo
+    lock: (trigger, id) => {
+      if (!trigger) return;
+      trigger.classList.add(CSS_INUTIL);
+      trigger.dataset.apiLocked = "true";
+      if (trigger.tagName === 'BUTTON' || trigger.tagName === 'INPUT') trigger.disabled = true;
+    },
+
+    // Lógica visual de desbloqueo (Centralizada)
+    unlockUI: (trigger, id) => {
+      if (!trigger) return;
+      const reaction = trigger.getAttribute('button-reaction') || 'default';
+      const loadingEl = _h.q(`[loading="${id}"]`);
+
+      // 1. Restaurar Trigger
+      trigger.classList.remove(CSS_INUTIL);
+      trigger.classList.remove(CSS_HIDE); // En caso de que se haya ocultado
+      delete trigger.dataset.apiLocked;
+      if (trigger.tagName === 'BUTTON' || trigger.tagName === 'INPUT') trigger.disabled = false;
+
+      // 2. Gestionar Loaders según reacción
+      if (reaction === 'show-loading') {
+        // Ocultar loading asociado
+        if (loadingEl) loadingEl.classList.add(CSS_HIDE);
+        // Si usaba nextSibling logic antigua, también restaurar
+        const next = trigger.nextElementSibling;
+        if (next && next.classList.contains('w-button')) next.classList.add(CSS_HIDE); // Asumiendo estructura webflow
+      } 
+      else if (reaction === 'show-loader') {
+         document.dispatchEvent(new Event("hide-loader"));
+         // Si hay un loading específico visible, ocultarlo
+         if (loadingEl) loadingEl.style.display = 'none'; 
+      }
+    },
+
+    // Construcción del Payload
+    buildPayload: async (container, extraDetails) => {
+      const payload = {
+        device_fingerprint: await _h.getFingerprint(),
+        user_agent: navigator.userAgent,
+        ...extraDetails // Inyectamos todos los detalles del evento/trigger
+      };
+
+      const urlParams = new URLSearchParams(window.location.search);
+      urlParams.forEach((val, key) => { payload[key] = val; });
+
+      const sendThis = localStorage.getItem('send_this');
+      if (sendThis) {
+        try { Object.assign(payload, JSON.parse(sendThis)); } catch (e) {}
+      }
+
+      // Solo buscamos inputs si existe container (casos submit/click)
+      if (container) {
+        _h.qa('[api-input]', container).forEach(input => {
+          const name = input.getAttribute('name') || input.id;
+          if (name) payload[name] = input.value;
+        });
+      }
+      return payload;
+    },
+
+    // Validación de Inputs
+    validate: (container) => {
+      if (!container) return true;
+      const requiredInputs = _h.qa('[api-input][data-required]', container);
+
+      const invalid = requiredInputs.filter(input => {
+        const type = (input.type || '').toLowerCase();
+        const tag = input.tagName.toLowerCase();
+        const groupKey = input.getAttribute('name') || input.getAttribute('data-group');
+
+        if (type === 'radio') {
+          if (!groupKey) return true;
+          const group = _h.qa(`input[type="radio"][data-required][name="${groupKey}"], input[type="radio"][data-required][data-group="${groupKey}"]`, container);
+          return !group.some(r => r.checked);
+        }
+        if (type === 'checkbox') {
+          if (!groupKey) return !input.checked;
+          const group = _h.qa(`input[type="checkbox"][data-required][name="${groupKey}"], input[type="checkbox"][data-required][data-group="${groupKey}"]`, container);
+          return !group.some(c => c.checked);
+        }
+        if (tag === 'select') return !input.value || input.value.trim() === '';
+        return !input.value || input.value.trim() === '';
+      });
+
+      return invalid.length === 0;
+    },
+
+    // EJECUCIÓN PRINCIPAL
+    execute: async (data) => {
+      // data contiene todos los atributos del trigger + api-type
+      const triggerId = data['api-trigger'];
+      const triggerEl = _h.q(`[api-trigger="${triggerId}"]`); // Referencia DOM
+      
+      if (triggerEl && triggerEl.dataset.apiLocked === "true") return;
+
+      const method = (data['api-method'] || 'post').toLowerCase();
+      const endpoint = _h.normalizeEndpoint(data['api-endpoint'] || '');
+      const reaction = data['button-reaction'] || 'default';
+      const apiType = data['api-type'] || 'event'; // 'submit', 'click', 'event'
+
+      // Referencias DOM
+      const containerEl = (apiType !== 'event') ? _h.q(`[api-container="${triggerId}"]`) : null;
+      const loadingEl = _h.q(`[loading="${triggerId}"]`);
+
+      // 1. Configurar SDK
+      if (!window.xano) return console.error("❌ Creatifornia Error: SDK de Xano no inicializado.");
+      const AuthToken = localStorage.getItem(TOKEN_KEY);
+      if (AuthToken) window.xano.setAuthToken(AuthToken);
+
+      // 2. Bloqueo UI (Solo si hay elemento trigger)
+      if (triggerEl) apiEngine.lock(triggerEl, triggerId);
+
+      // 3. Validación (Solo submit/click)
+      if (apiType !== 'event') {
+        if (!apiEngine.validate(containerEl)) {
+           if (triggerEl) apiEngine.unlockUI(triggerEl, triggerId);
+        document.dispatchEvent(new CustomEvent('message', { 
+          detail: { 
+            message: "Completa todos los datos para continuar.", 
+            path: "api.input_incomplete", 
+            auto_hide: 5000 
+          } 
+        }));          
+           return;
+        }
+      }
+
+      // 4. Reacciones Visuales
+      document.dispatchEvent(new CustomEvent("api-call", { detail: { id: triggerId } }));
+      
+      if (reaction === 'show-loader') {
+        document.dispatchEvent(new Event("show-loader"));
+        if (loadingEl) loadingEl.style.display = ''; 
+      } 
+      else if (reaction === 'show-loading') {
+        if (triggerEl) triggerEl.classList.add(CSS_HIDE);
+        if (loadingEl) loadingEl.classList.remove(CSS_HIDE);
+      }
+
+      // 5. Llamada API
+      try {
+        const payload = await apiEngine.buildPayload(containerEl, data);
+        const endpointPath = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+        const resp = await sendToXano(endpointPath, payload, method);
+
+        // LOG ÚNICO Y CENTRALIZADO
+        console.groupCollapsed(`[XANO RESPONSE] ${resp.status}`);
+        console.log('Trigger ID:', triggerId);
+        console.log('Endpoint:', endpointPath);
+        console.log('Payload Sent:', payload);
+        console.log('Response Body:', resp.body);
+        console.groupEnd();
+
+        // 6. Manejo de Errores (Status != 200)
+        if (resp.status !== 200) {
+          
+          // Caso Crítico: 401 Unauthorized
+          if (resp.status === 401) {
+            localStorage.removeItem(TOKEN_KEY);
+            window.location.href = AUTH_REDIRECT;
+            return;
+          }
+
+          // Otros errores
+// Dentro de apiEngine.execute, en la sección de manejo de errores (!norm.ok):
+const body = norm.payload || {};
+const errorPath = body.payload?.path || null; // Extraemos "dynamic.auth.too_many"
+const errorMsg = body.message || "Error";      // Extraemos "Has superado el límite..."
+
+// Disparamos el evento que Svetlana (el modal) está escuchando
+document.dispatchEvent(new CustomEvent("message", {
+  detail: {
+    message: errorMsg,
+    path: errorPath,
+    auto_hide: 5000 // Opcional: tiempo personalizado
+  }
+}));
+
+          // Lógica de Desbloqueo por Error
+          const unlockVal = data['unlock-after'];
+          if (unlockVal === 'never') {
+             // No hacemos nada, se queda bloqueado
+          } else {
+             const delay = (unlockVal && !isNaN(unlockVal)) ? Number(unlockVal) : 3000;
+             setTimeout(() => {
+               if (triggerEl) apiEngine.unlockUI(triggerEl, triggerId);
+             }, delay);
+          }
+          return;
+        }
+
+        // 7. Éxito (Status 200) - Procesar Lista de Acciones
+        const actionList = Array.isArray(resp.body) ? resp.body : [];
+        
+        // Contexto para pasar a las acciones
+        const context = {
+          unlockUI: () => { if (triggerEl) apiEngine.unlockUI(triggerEl, triggerId); }
+        };
+
+        for (const action of actionList) {
+          const handler = actionHandlers[action.type];
+          if (handler) {
+            await handler(action.data || {}, context);
+          } else {
+            console.warn(`Acción desconocida: ${action.type}`);
+          }
+        }
+
+      } catch (err) {
+        console.error('API Engine Critical Failure', err);
+        // Fallback de desbloqueo en error crítico
+        if (triggerEl) apiEngine.unlockUI(triggerEl, triggerId);
+      }
+    },
+
+    init: () => {
+      // A. Listener de Clicks en el DOM (Submit y Click)
+      const triggers = _h.qa('[api-trigger]');
+      triggers.forEach(trigger => {
+        const isForm = trigger.tagName === 'FORM';
+        const eventType = isForm ? 'submit' : 'click';
+
+        trigger.addEventListener(eventType, (e) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          // Recopilar atributos
+          const attrs = _h.getAttributesAsObj(trigger);
+          // Definir tipo
+          attrs['api-type'] = isForm ? 'submit' : 'click';
+
+          apiEngine.execute(attrs);
+        }, true);
+      });
+
+      // B. Listener de Eventos Personalizados (Scripts externos)
+      document.addEventListener(EVENT_REQUEST_NAME, (e) => {
+        const detail = e.detail || {};
+        // Forzamos el tipo event si no viene especificado
+        detail['api-type'] = 'event';
+        apiEngine.execute(detail);
+      });
+    }
+  };
+
+  // Exponer globalmente
+  window[NAMESPACE] = window[NAMESPACE] || {};
+  window[NAMESPACE].api = {
+    init: apiEngine.init,
+    // Método manual legacy (ahora usa el dispatch interno)
+    call: (id) => {
+      const trigger = _h.q(`[api-trigger="${id}"]`);
+      if (trigger) {
+         const attrs = _h.getAttributesAsObj(trigger);
+         attrs['api-type'] = trigger.tagName === 'FORM' ? 'submit' : 'click';
+         apiEngine.execute(attrs);
+      }
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', apiEngine.init);
+  } else {
+    apiEngine.init();
+  }
+
+})();
+</script>
